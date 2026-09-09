@@ -1,4 +1,4 @@
-.gradle
-.idea
-.intellijPlatform
-build
+.gradle/
+build/
+.idea/
+*.iml

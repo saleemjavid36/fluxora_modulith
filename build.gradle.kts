@@ -6,16 +6,20 @@ plugins {
     id("org.jetbrains.intellij.platform")
 }
 
-// Read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin.html
+repositories {
+    mavenCentral()
+
+    intellijPlatform {
+        defaultRepositories()
+    }
+}
+
 dependencies {
     testImplementation(libs.junit)
 
-    // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
     intellijPlatform {
         intellijIdea("2025.3.5")
-        testFramework(TestFrameworkType.Platform)
-
-        // Add plugin dependencies for compilation here:
         bundledPlugin("com.intellij.java")
+        testFramework(TestFrameworkType.Platform)
     }
 }

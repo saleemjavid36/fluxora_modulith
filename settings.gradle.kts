@@ -1,6 +1,6 @@
 import org.jetbrains.intellij.platform.gradle.extensions.intellijPlatform
 
-rootProject.name = "modulith-assistance"
+rootProject.name = "SpringModulithPluginAssistance"
 
 pluginManagement {
     plugins {
