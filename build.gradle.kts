@@ -15,7 +15,7 @@ repositories {
 }
 
 dependencies {
-    testImplementation(libs.junit)
+    testImplementation("org.junit.jupiter:junit-jupiter:5.12.2")
 
     intellijPlatform {
         intellijIdea("2025.3.5")

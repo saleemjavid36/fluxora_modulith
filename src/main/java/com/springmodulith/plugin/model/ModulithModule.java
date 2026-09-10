@@ -26,12 +26,33 @@ public final class ModulithModule {
         this.namedInterfaces = Collections.unmodifiableList(List.copyOf(namedInterfaces));
     }
 
-    @NotNull public String getName() { return name; }
-    @NotNull public String getPackageName() { return packageName; }
-    public boolean isOpen() { return open; }
-    public boolean isAllowedDependenciesConfigured() { return allowedDependenciesConfigured; }
-    @NotNull public Set<String> getAllowedDependencies() { return allowedDependencies; }
-    @NotNull public List<NamedInterface> getNamedInterfaces() { return namedInterfaces; }
+    @NotNull
+    public String getName() {
+        return name;
+    }
+
+    @NotNull
+    public String getPackageName() {
+        return packageName;
+    }
+
+    public boolean isOpen() {
+        return open;
+    }
+
+    public boolean isAllowedDependenciesConfigured() {
+        return allowedDependenciesConfigured;
+    }
+
+    @NotNull
+    public Set<String> getAllowedDependencies() {
+        return allowedDependencies;
+    }
+
+    @NotNull
+    public List<NamedInterface> getNamedInterfaces() {
+        return namedInterfaces;
+    }
 
     public boolean containsPackage(@NotNull String candidate) {
         return candidate.equals(packageName) || candidate.startsWith(packageName + ".");
@@ -50,37 +71,67 @@ public final class ModulithModule {
         return false;
     }
 
-    public boolean allowsType(@NotNull String qualifiedType, @NotNull String targetPackage) {
-        if (!allowedDependenciesConfigured) return true;
+    public boolean allowsType(
+            @NotNull String qualifiedType,
+            @NotNull String targetPackage,
+            @NotNull ModulithModule target) {
+
+        if (!allowedDependenciesConfigured) {
+            return true;
+        }
+
         for (String dependency : allowedDependencies) {
             DependencyRule rule = DependencyRule.parse(dependency);
-            if (rule == null || !rule.moduleIdMatchesModule(target)) continue;
-            if (rule.interfaceId() == null) {
-                return targetPackage.equals(target.getPackageName());
+
+            if (rule == null || !rule.moduleIdMatchesModule(target)) {
+                continue;
             }
-            if ("*".equals(rule.interfaceId())) return true;
+
+            if (rule.interfaceId() == null) {
+                return true;
+            }
+
+            if ("*".equals(rule.interfaceId())) {
+                return true;
+            }
+
             NamedInterface named = target.findNamedInterface(rule.interfaceId());
-            if (named != null && (named.containsType(qualifiedType) || named.containsPackage(targetPackage))) return true;
+
+            if (named != null &&
+                    (named.containsType(qualifiedType)
+                            || named.containsPackage(targetPackage))) {
+                return true;
+            }
         }
+
         return false;
     }
 
     public boolean exposes(@NotNull String qualifiedType, @NotNull String targetPackage) {
         if (open) return true;
         for (NamedInterface namedInterface : namedInterfaces) {
-            if (namedInterface.containsType(qualifiedType) || namedInterface.containsPackage(targetPackage)) return true;
+            if (namedInterface.containsType(qualifiedType) || namedInterface.containsPackage(targetPackage))
+                return true;
         }
         return targetPackage.equals(packageName);
     }
 
-    public boolean hasNamedInterface(@NotNull String id) { return findNamedInterface(id) != null; }
+    public boolean hasNamedInterface(@NotNull String id) {
+        return findNamedInterface(id) != null;
+    }
+
     public NamedInterface findNamedInterface(@NotNull String id) {
         return namedInterfaces.stream().filter(i -> i.getName().equals(id)).findFirst().orElse(null);
     }
 
-    private boolean matches(@NotNull String id) { return name.equals(id) || packageName.equals(id); }
+    private boolean matches(@NotNull String id) {
+        return name.equals(id) || packageName.equals(id);
+    }
 
-    @Override public String toString() { return name + " (" + packageName + ")"; }
+    @Override
+    public String toString() {
+        return name + " (" + packageName + ")";
+    }
 
     public record DependencyRule(String moduleId, String interfaceId) {
         public static DependencyRule parse(String value) {
@@ -94,6 +145,9 @@ public final class ModulithModule {
             if (module.isEmpty() || iface.isEmpty()) return null;
             return new DependencyRule(module, iface);
         }
-        private boolean moduleIdMatchesModule(ModulithModule module) { return module.matches(moduleId); }
+
+        private boolean moduleIdMatchesModule(ModulithModule module) {
+            return module.matches(moduleId);
+        }
     }
 }

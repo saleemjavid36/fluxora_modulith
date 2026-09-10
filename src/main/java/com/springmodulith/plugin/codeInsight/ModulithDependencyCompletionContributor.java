@@ -15,6 +15,8 @@ import com.springmodulith.plugin.model.ModulithModule;
 import com.springmodulith.plugin.resolver.ModulithModuleResolver;
 import org.jetbrains.annotations.NotNull;
 
+import static com.intellij.codeInsight.completion.CompletionType.BASIC;
+
 public final class ModulithDependencyCompletionContributor extends CompletionContributor {
     public ModulithDependencyCompletionContributor() {
         extend(BASIC, PlatformPatterns.psiElement(PsiLiteralExpression.class), new Provider());
