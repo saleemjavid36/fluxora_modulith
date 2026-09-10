@@ -34,6 +34,24 @@ class ModulithModuleTest {
         assertFalse(account.allowsDependency(user));
     }
 
+
+    @Test void namedInterfaceAllowsOnlyDeclaredInterfaceType() {
+        ModulithModule account = module("account", "com.example.account", false, true, Set.of("user :: api"));
+        ModulithModule user = new ModulithModule("user", "com.example.user", false, false, Set.of(),
+                List.of(new NamedInterface("api", "com.example.user.api", Set.of("com.example.user.api.UserApi"))));
+
+        assertTrue(account.allowsType("com.example.user.api.UserApi", "com.example.user.api", user));
+        assertFalse(account.allowsType("com.example.user.UserService", "com.example.user", user));
+    }
+
+    @Test void namedInterfacePackageIncludesNestedPackages() {
+        NamedInterface api = new NamedInterface("api", "com.example.user.api", Set.of());
+
+        assertTrue(api.containsPackage("com.example.user.api"));
+        assertTrue(api.containsPackage("com.example.user.api.v1"));
+        assertFalse(api.containsPackage("com.example.user.internal"));
+    }
+
     private ModulithModule module(String name, String pkg, boolean open, boolean configured, Set<String> deps) {
         return new ModulithModule(name, pkg, open, configured, deps, List.of());
     }

@@ -25,11 +25,19 @@ public final class NamedInterface {
     @NotNull public String getPackageName() { return packageName; }
     @NotNull public Set<String> getTypeNames() { return typeNames; }
 
+    /**
+     * A package-based named interface exposes the package and its sub-packages.
+     * Type-based named interfaces are handled by {@link #containsType(String)}.
+     */
     public boolean containsPackage(@NotNull String candidate) {
         return candidate.equals(packageName) || candidate.startsWith(packageName + ".");
     }
 
     public boolean containsType(@NotNull String qualifiedName) {
         return typeNames.contains(qualifiedName);
+    }
+
+    public boolean contains(@NotNull String qualifiedType, @NotNull String targetPackage) {
+        return containsType(qualifiedType) || containsPackage(targetPackage);
     }
 }

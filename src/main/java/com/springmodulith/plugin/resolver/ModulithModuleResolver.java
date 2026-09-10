@@ -155,7 +155,7 @@ public final class ModulithModuleResolver {
             for (String name : readNamedInterfaceNames(packageAnnotation, pkg.substring(modulePackage.length() + (pkg.equals(modulePackage) ? 0 : 1)))) {
                 String interfaceName = name.isEmpty() ? simplePackageName(pkg) : name;
                 String key = interfaceName + "@" + pkg;
-                if (visited.add(key)) result.add(new NamedInterface(interfaceName, pkg, collectPublicTypes(directory, modulePackage)));
+                if (visited.add(key)) result.add(new NamedInterface(interfaceName, pkg, collectPublicTypesRecursively(directory, pkg)));
             }
         }
         for (PsiFile file : directory.getFiles()) {
@@ -179,15 +179,25 @@ public final class ModulithModuleResolver {
     }
 
     @NotNull
-    private Set<String> collectPublicTypes(@NotNull PsiDirectory directory, @NotNull String modulePackage) {
+    private Set<String> collectPublicTypesRecursively(@NotNull PsiDirectory directory, @NotNull String namedPackage) {
         Set<String> result = new LinkedHashSet<>();
+        collectPublicTypesRecursively(directory, namedPackage, result);
+        return result;
+    }
+
+    private void collectPublicTypesRecursively(@NotNull PsiDirectory directory, @NotNull String namedPackage,
+                                               @NotNull Set<String> result) {
+        if (!namedPackage.equals(packageName(directory)) && !packageName(directory).startsWith(namedPackage + ".")) return;
         for (PsiFile file : directory.getFiles()) {
             if (!(file instanceof PsiJavaFile javaFile)) continue;
             for (PsiClass psiClass : javaFile.getClasses()) {
-                if (psiClass.getQualifiedName() != null && psiClass.hasModifierProperty("public")) result.add(psiClass.getQualifiedName());
+                String qualifiedName = psiClass.getQualifiedName();
+                if (qualifiedName != null && psiClass.hasModifierProperty("public")) result.add(qualifiedName);
             }
         }
-        return result;
+        for (PsiDirectory child : directory.getSubdirectories()) {
+            collectPublicTypesRecursively(child, namedPackage, result);
+        }
     }
 
     @NotNull

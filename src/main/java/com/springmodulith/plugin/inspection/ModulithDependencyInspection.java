@@ -12,31 +12,49 @@ import com.springmodulith.plugin.configuration.ModulithSettings;
 import com.springmodulith.plugin.resolver.ModulithModuleResolver;
 import org.jetbrains.annotations.NotNull;
 
-public final class ModulithDependencyInspection extends AbstractBaseJavaLocalInspectionTool {
+public final class ModulithDependencyInspection
+        extends AbstractBaseJavaLocalInspectionTool {
+
     @Override
-    public @NotNull PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly) {
+    public @NotNull PsiElementVisitor buildVisitor(
+            @NotNull ProblemsHolder holder,
+            boolean isOnTheFly) {
+
         Project project = holder.getProject();
-        if (!ModulithSettings.getInstance(project).isInspectAllowedDependencies()) {
+
+        if (!ModulithSettings.getInstance(project)
+                .isInspectAllowedDependencies()) {
             return PsiElementVisitor.EMPTY_VISITOR;
         }
 
         ModulithDependencyAnalyzer analyzer =
-                new ModulithDependencyAnalyzer(new ModulithModuleResolver(project), project);
+                new ModulithDependencyAnalyzer(
+                        new ModulithModuleResolver(project),
+                        project
+                );
 
         return new JavaElementVisitor() {
+
             @Override
-            public void visitImportStatement(@NotNull PsiImportStatement statement) {
-                PsiJavaCodeReferenceElement reference = statement.getImportReference();
+            public void visitImportStatement(
+                    @NotNull PsiImportStatement statement) {
+
+                PsiJavaCodeReferenceElement reference =
+                        statement.getImportReference();
+
                 if (reference != null) {
                     registerViolation(reference, analyzer, holder);
                 }
             }
 
             @Override
-            public void visitReferenceElement(@NotNull PsiJavaCodeReferenceElement reference) {
+            public void visitReferenceElement(
+                    @NotNull PsiJavaCodeReferenceElement reference) {
+
                 if (reference.getParent() instanceof PsiImportStatement) {
                     return;
                 }
+
                 registerViolation(reference, analyzer, holder);
             }
         };
@@ -46,9 +64,16 @@ public final class ModulithDependencyInspection extends AbstractBaseJavaLocalIns
             @NotNull PsiJavaCodeReferenceElement reference,
             @NotNull ModulithDependencyAnalyzer analyzer,
             @NotNull ProblemsHolder holder) {
+
         String message = analyzer.getMessage(reference);
-        if (message != null) {
-            holder.registerProblem(reference.getReferenceNameElement(), message);
+
+        if (message == null) {
+            return;
         }
+
+        holder.registerProblem(
+                reference.getReferenceNameElement(),
+                message
+        );
     }
 }
