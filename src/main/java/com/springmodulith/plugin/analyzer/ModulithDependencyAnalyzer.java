@@ -2,173 +2,70 @@ package com.springmodulith.plugin.analyzer;
 
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiElement;
-import com.intellij.psi.PsiImportStatement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiJavaCodeReferenceElement;
 import com.intellij.psi.PsiJavaFile;
+import com.intellij.psi.PsiImportStatement;
+import com.intellij.openapi.roots.ProjectFileIndex;
+import com.intellij.openapi.roots.ProjectRootManager;
 import com.springmodulith.plugin.model.ModulithModule;
 import com.springmodulith.plugin.resolver.ModulithModuleResolver;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public final class ModulithDependencyAnalyzer {
+    private final ModulithModuleResolver resolver;
+    private final ProjectFileIndex fileIndex;
 
-    private final ModulithModuleResolver moduleResolver;
-
-    public ModulithDependencyAnalyzer(
-            @NotNull ModulithModuleResolver moduleResolver) {
-        this.moduleResolver = moduleResolver;
+    public ModulithDependencyAnalyzer(@NotNull ModulithModuleResolver resolver, @NotNull com.intellij.openapi.project.Project project) {
+        this.resolver = resolver;
+        this.fileIndex = ProjectRootManager.getInstance(project).getFileIndex();
     }
 
-    public boolean isCrossModuleDependency(
-            @NotNull PsiImportStatement importStatement) {
+    public boolean isViolation(@NotNull PsiJavaCodeReferenceElement reference) {
+        Dependency dependency = analyze(reference);
+        return dependency != null && !dependency.source().allowsDependency(dependency.target());
+    }
 
-        PsiJavaFile sourceFile = getJavaFile(importStatement);
+    @Nullable
+    public String getMessage(@NotNull PsiJavaCodeReferenceElement reference) {
+        Dependency dependency = analyze(reference);
+        if (dependency == null || dependency.source().allowsDependency(dependency.target())) return null;
+        return "Modulith dependency is not allowed: " + dependency.source().getName() + " -> " + dependency.target().getName();
+    }
 
-        if (sourceFile == null) {
-            return false;
-        }
-
+    @Nullable
+    public Dependency analyze(@NotNull PsiJavaCodeReferenceElement reference) {
+        if (isInsideImport(reference)) return null;
+        PsiElement resolved = reference.resolve();
+        if (!(resolved instanceof PsiClass targetClass)) return null;
+        PsiJavaFile sourceFile = containingJavaFile(reference);
+        PsiJavaFile targetFile = containingJavaFile(targetClass);
+        if (sourceFile == null || targetFile == null) return null;
+        if (!isProjectSource(sourceFile) || !isProjectSource(targetFile)) return null;
         String sourcePackage = sourceFile.getPackageName();
+        String targetPackage = targetFile.getPackageName();
+        if (sourcePackage.isEmpty() || targetPackage.isEmpty() || sourcePackage.equals(targetPackage)) return null;
+        ModulithModule source = resolver.resolveModule(sourceFile, sourcePackage);
+        ModulithModule target = resolver.resolveModule(sourceFile, targetPackage);
+        if (source == null || target == null || source.getPackageName().equals(target.getPackageName())) return null;
+        return new Dependency(source, target, targetClass);
+    }
 
-        if (sourcePackage.isEmpty()) {
-            return false;
-        }
+    private boolean isInsideImport(@NotNull PsiElement element) {
+        return element.getParent() instanceof PsiImportStatement || element.getParent() != null &&
+                com.intellij.psi.util.PsiTreeUtil.getParentOfType(element, PsiImportStatement.class) != null;
+    }
 
-        PsiClass targetClass = resolveImportedClass(importStatement);
-
-        if (targetClass == null) {
-            return false;
-        }
-
-        String targetPackage = getPackageName(targetClass);
-
-        if (targetPackage == null || targetPackage.isEmpty()) {
-            return false;
-        }
-
-        ModulithModule sourceModule =
-                moduleResolver.resolveModule(
-                        sourceFile,
-                        sourcePackage
-                );
-
-        ModulithModule targetModule =
-                moduleResolver.resolveModule(
-                        sourceFile,
-                        targetPackage
-                );
-
-        if (sourceModule == null || targetModule == null) {
-            return false;
-        }
-
-        return !sourceModule.getPackageName()
-                .equals(targetModule.getPackageName());
+    private boolean isProjectSource(@NotNull PsiFile file) {
+        return file.getVirtualFile() != null && fileIndex.isInSourceContent(file.getVirtualFile());
     }
 
     @Nullable
-    public String getDependencyMessage(
-            @NotNull PsiImportStatement importStatement) {
-
-        PsiJavaFile sourceFile = getJavaFile(importStatement);
-
-        if (sourceFile == null) {
-            return null;
-        }
-
-        PsiClass targetClass = resolveImportedClass(importStatement);
-
-        if (targetClass == null) {
-            return null;
-        }
-
-        String sourcePackage = sourceFile.getPackageName();
-        String targetPackage = getPackageName(targetClass);
-
-        if (sourcePackage.isEmpty()
-                || targetPackage == null
-                || targetPackage.isEmpty()) {
-            return null;
-        }
-
-        ModulithModule sourceModule =
-                moduleResolver.resolveModule(
-                        sourceFile,
-                        sourcePackage
-                );
-
-        ModulithModule targetModule =
-                moduleResolver.resolveModule(
-                        sourceFile,
-                        targetPackage
-                );
-
-        if (sourceModule == null || targetModule == null) {
-            return null;
-        }
-
-        if (sourceModule.getPackageName()
-                .equals(targetModule.getPackageName())) {
-            return null;
-        }
-
-        return "Modulith dependency: "
-                + sourceModule.getName()
-                + " -> "
-                + targetModule.getName();
+    private PsiJavaFile containingJavaFile(@NotNull PsiElement element) {
+        PsiFile file = element.getContainingFile();
+        return file instanceof PsiJavaFile ? (PsiJavaFile) file : null;
     }
 
-    @Nullable
-    private PsiJavaFile getJavaFile(
-            @NotNull PsiImportStatement importStatement) {
-
-        if (importStatement.getContainingFile()
-                instanceof PsiJavaFile) {
-
-            return (PsiJavaFile)
-                    importStatement.getContainingFile();
-        }
-
-        return null;
-    }
-
-    @Nullable
-    private PsiClass resolveImportedClass(
-            @NotNull PsiImportStatement importStatement) {
-
-        PsiElement resolved = importStatement.resolve();
-
-        if (resolved instanceof PsiClass) {
-            return (PsiClass) resolved;
-        }
-
-        return null;
-    }
-
-    @Nullable
-    private String getPackageName(
-            @NotNull PsiClass psiClass) {
-
-        PsiJavaFile javaFile =
-                getContainingJavaFile(psiClass);
-
-        if (javaFile == null) {
-            return null;
-        }
-
-        return javaFile.getPackageName();
-    }
-
-    @Nullable
-    private PsiJavaFile getContainingJavaFile(
-            @NotNull PsiClass psiClass) {
-
-        if (psiClass.getContainingFile()
-                instanceof PsiJavaFile) {
-
-            return (PsiJavaFile)
-                    psiClass.getContainingFile();
-        }
-
-        return null;
-    }
+    public record Dependency(@NotNull ModulithModule source, @NotNull ModulithModule target, @NotNull PsiClass targetClass) {}
 }

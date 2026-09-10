@@ -1,5 +1,5 @@
-<html lang="en">
-<body>
-Detects dependencies between recognized Spring Modulith-style modules.
-</body>
-</html>
+<html><body>
+Detects access from one recognized Spring Modulith module to a non-exposed type in another module.
+A module is open when <code>@ApplicationModule(open = true)</code> is configured; otherwise only named-interface
+packages/classes and the module's base package are exposed.
+</body></html>

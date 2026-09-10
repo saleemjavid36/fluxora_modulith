@@ -5,55 +5,23 @@ import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.JavaElementVisitor;
 import com.intellij.psi.PsiElementVisitor;
-import com.intellij.psi.PsiImportStatement;
+import com.intellij.psi.PsiJavaCodeReferenceElement;
 import com.springmodulith.plugin.analyzer.ModulithDependencyAnalyzer;
+import com.springmodulith.plugin.configuration.ModulithSettings;
 import com.springmodulith.plugin.resolver.ModulithModuleResolver;
 import org.jetbrains.annotations.NotNull;
 
-public final class ModulithDependencyInspection
-        extends AbstractBaseJavaLocalInspectionTool {
-
+public final class ModulithDependencyInspection extends AbstractBaseJavaLocalInspectionTool {
     @Override
-    public @NotNull PsiElementVisitor buildVisitor(
-            @NotNull ProblemsHolder holder,
-            boolean isOnTheFly) {
-
-        Project project =
-                holder.getProject();
-
-        ModulithModuleResolver moduleResolver =
-                new ModulithModuleResolver(project);
-
-        ModulithDependencyAnalyzer analyzer =
-                new ModulithDependencyAnalyzer(
-                        moduleResolver
-                );
-
+    public @NotNull PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly) {
+        Project project = holder.getProject();
+        if (!ModulithSettings.getInstance(project).isInspectApiUsage()) return PsiElementVisitor.EMPTY_VISITOR;
+        ModulithDependencyAnalyzer analyzer = new ModulithDependencyAnalyzer(new ModulithModuleResolver(project), project);
         return new JavaElementVisitor() {
-
             @Override
-            public void visitImportStatement(
-                    @NotNull PsiImportStatement importStatement) {
-
-                if (!analyzer.isCrossModuleDependency(
-                        importStatement)) {
-
-                    return;
-                }
-
-                String message =
-                        analyzer.getDependencyMessage(
-                                importStatement
-                        );
-
-                if (message == null) {
-                    return;
-                }
-
-                holder.registerProblem(
-                        importStatement,
-                        message
-                );
+            public void visitReferenceElement(@NotNull PsiJavaCodeReferenceElement reference) {
+                String message = analyzer.getMessage(reference);
+                if (message != null) holder.registerProblem(reference.getReferenceNameElement(), message);
             }
         };
     }
