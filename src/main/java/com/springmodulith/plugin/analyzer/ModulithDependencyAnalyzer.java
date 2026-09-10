@@ -47,7 +47,7 @@ public final class ModulithDependencyAnalyzer {
         String targetPackage = targetFile.getPackageName();
         if (sourcePackage.isEmpty() || targetPackage.isEmpty() || sourcePackage.equals(targetPackage)) return null;
         ModulithModule source = resolver.resolveModule(sourceFile, sourcePackage);
-        ModulithModule target = resolver.resolveModule(sourceFile, targetPackage);
+        ModulithModule target = resolver.resolveModule(targetFile, targetPackage);
         if (source == null || target == null || source.getPackageName().equals(target.getPackageName())) return null;
         return new Dependency(source, target, targetClass);
     }
