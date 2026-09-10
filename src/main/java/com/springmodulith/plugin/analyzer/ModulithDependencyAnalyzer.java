@@ -5,7 +5,6 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiJavaCodeReferenceElement;
 import com.intellij.psi.PsiJavaFile;
-import com.intellij.psi.PsiImportStatement;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.roots.ProjectRootManager;
 import com.springmodulith.plugin.model.ModulithModule;
@@ -36,7 +35,6 @@ public final class ModulithDependencyAnalyzer {
 
     @Nullable
     public Dependency analyze(@NotNull PsiJavaCodeReferenceElement reference) {
-        if (isInsideImport(reference)) return null;
         PsiElement resolved = reference.resolve();
         if (!(resolved instanceof PsiClass targetClass)) return null;
         PsiJavaFile sourceFile = containingJavaFile(reference);
@@ -50,11 +48,6 @@ public final class ModulithDependencyAnalyzer {
         ModulithModule target = resolver.resolveModule(targetFile, targetPackage);
         if (source == null || target == null || source.getPackageName().equals(target.getPackageName())) return null;
         return new Dependency(source, target, targetClass);
-    }
-
-    private boolean isInsideImport(@NotNull PsiElement element) {
-        return element.getParent() instanceof PsiImportStatement || element.getParent() != null &&
-                com.intellij.psi.util.PsiTreeUtil.getParentOfType(element, PsiImportStatement.class) != null;
     }
 
     private boolean isProjectSource(@NotNull PsiFile file) {

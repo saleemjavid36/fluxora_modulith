@@ -19,17 +19,19 @@ import static com.intellij.codeInsight.completion.CompletionType.BASIC;
 
 public final class ModulithDependencyCompletionContributor extends CompletionContributor {
     public ModulithDependencyCompletionContributor() {
-        extend(BASIC, PlatformPatterns.psiElement(PsiLiteralExpression.class), new Provider());
+        extend(BASIC, PlatformPatterns.psiElement(), new Provider());
     }
 
     private static final class Provider extends CompletionProvider<CompletionParameters> {
         @Override protected void addCompletions(@NotNull CompletionParameters parameters, @NotNull ProcessingContext context,
                                                 @NotNull CompletionResultSet result) {
             PsiElement element = parameters.getPosition();
-            PsiAnnotation annotation = PsiTreeUtil.getParentOfType(element, PsiAnnotation.class);
+            PsiLiteralExpression literal = PsiTreeUtil.getParentOfType(element, PsiLiteralExpression.class);
+            if (literal == null) return;
+            PsiAnnotation annotation = PsiTreeUtil.getParentOfType(literal, PsiAnnotation.class);
             if (annotation == null || !"org.springframework.modulith.ApplicationModule".equals(annotation.getQualifiedName()) ||
                     annotation.findDeclaredAttributeValue("allowedDependencies") == null) return;
-            for (ModulithModule module : new ModulithModuleResolver(element.getProject()).resolveModules(element.getContainingFile())) {
+            for (ModulithModule module : new ModulithModuleResolver(element.getProject()).resolveModules(literal.getContainingFile())) {
                 result.addElement(LookupElementBuilder.create(module.getName()));
                 for (var namedInterface : module.getNamedInterfaces()) {
                     result.addElement(LookupElementBuilder.create(module.getName() + " :: " + namedInterface.getName()));

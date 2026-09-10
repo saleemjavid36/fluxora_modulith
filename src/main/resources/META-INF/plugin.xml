@@ -13,7 +13,10 @@
     <depends>com.intellij.java</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <localInspection language="JAVA" shortName="ModulithDependency" displayName="Spring Modulith API access"
+        <localInspection language="JAVA" shortName="ModulithDependency" displayName="Spring Modulith dependency"
+                         groupName="Spring Modulith" enabledByDefault="true" level="WARNING"
+                         implementationClass="com.springmodulith.plugin.inspection.ModulithDependencyInspection"/>
+        <localInspection language="JAVA" shortName="ModulithApiUsage" displayName="Spring Modulith API access"
                          groupName="Spring Modulith" enabledByDefault="true" level="WARNING"
                          implementationClass="com.springmodulith.plugin.inspection.ModulithApiUsageInspection"/>
         <localInspection language="JAVA" shortName="ModulithAllowedDependency" displayName="Spring Modulith allowed dependency"

@@ -34,14 +34,6 @@ public final class ModulithApiUsageInspection extends AbstractBaseJavaLocalInspe
                 String targetPackage = target.getContainingFile() instanceof com.intellij.psi.PsiJavaFile file ? file.getPackageName() : "";
 
                 if (!dependency.source().allowsType(targetType, targetPackage, dependency.target())) {
-                    List<LocalQuickFix> fixes = new ArrayList<>();
-                    String rule = dependency.target().getName();
-                    if (targetPackage.equals(dependency.target().getPackageName())) {
-                        fixes.add(new AddAllowedDependencyFix(rule, dependency.source().getPackageName()));
-                    }
-                    holder.registerProblem(reference.getReferenceNameElement(),
-                            "Modulith dependency is not allowed: " + dependency.source().getName() + " -> " + dependency.target().getName(),
-                            fixes.toArray(new LocalQuickFix[0]));
                     return;
                 }
 
