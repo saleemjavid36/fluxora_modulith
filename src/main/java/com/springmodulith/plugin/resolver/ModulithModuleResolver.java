@@ -34,45 +34,77 @@ public final class ModulithModuleResolver {
 
     @NotNull
     public List<ModulithModule> resolveModules() {
-        String rootPackage = resolveRootPackage(null);
-        if (rootPackage.isEmpty()) return List.of();
-        PsiDirectory rootDirectory = findDirectoryForPackage(rootPackage);
-        if (rootDirectory == null) return List.of();
+        return resolveModules(null);
+    }
+
+    @NotNull
+    public List<ModulithModule> resolveModules(@Nullable PsiFile contextFile) {
+        String rootPackage = resolveRootPackage(contextFile);
         List<ModulithModule> result = new ArrayList<>();
         String strategy = ModulithSettings.getInstance(project).getDetectionStrategy();
-        if (ModulithSettings.EXPLICITLY_ANNOTATED.equals(strategy)) {
-            collectExplicitModules(rootDirectory, rootPackage, result);
-        } else {
-            for (PsiDirectory child : rootDirectory.getSubdirectories()) {
-                String packageName = packageName(child);
-                if (!packageName.isEmpty()) result.add(toModule(child, packageName));
+
+        if (!rootPackage.isEmpty()) {
+            List<PsiDirectory> roots = findDirectoriesForPackage(rootPackage);
+            for (PsiDirectory rootDirectory : roots) {
+                if (ModulithSettings.EXPLICITLY_ANNOTATED.equals(strategy)) {
+                    collectExplicitModules(rootDirectory, rootPackage, result);
+                } else {
+                    collectDirectModules(rootDirectory, result);
+                    collectNestedExplicitModules(rootDirectory, result);
+                }
             }
-            collectNestedExplicitModules(rootDirectory, result);
         }
+
+        // If the root was configured incorrectly or cannot be inferred,
+        // still discover explicitly annotated modules from source roots.
+        if (result.isEmpty() && ModulithSettings.EXPLICITLY_ANNOTATED.equals(strategy)) {
+            collectAllExplicitModules(result);
+        }
+
         result.sort(Comparator.comparing(ModulithModule::getPackageName));
         return deduplicate(result);
     }
 
-    @NotNull
-    public List<ModulithModule> resolveModules(@NotNull PsiFile contextFile) {
-        String rootPackage = resolveRootPackage(contextFile);
-        if (rootPackage.isEmpty()) return List.of();
-        PsiDirectory rootDirectory = findDirectoryForPackage(rootPackage);
-        if (rootDirectory == null) return List.of();
-
-        List<ModulithModule> result = new ArrayList<>();
-        String strategy = ModulithSettings.getInstance(project).getDetectionStrategy();
-        if (ModulithSettings.EXPLICITLY_ANNOTATED.equals(strategy)) {
-            collectExplicitModules(rootDirectory, rootPackage, result);
-        } else {
-            for (PsiDirectory child : rootDirectory.getSubdirectories()) {
-                String packageName = packageName(child);
-                if (!packageName.isEmpty()) result.add(toModule(child, packageName));
+    private void collectDirectModules(
+            @NotNull PsiDirectory rootDirectory,
+            @NotNull List<ModulithModule> result) {
+        for (PsiDirectory child : rootDirectory.getSubdirectories()) {
+            String packageName = packageName(child);
+            if (!packageName.isEmpty()
+                    && containsJavaSource(child)) {
+                result.add(toModule(child, packageName));
             }
-            collectNestedExplicitModules(rootDirectory, result);
         }
-        result.sort(Comparator.comparing(ModulithModule::getPackageName));
-        return deduplicate(result);
+    }
+
+    private boolean containsJavaSource(@NotNull PsiDirectory directory) {
+        for (PsiFile file : directory.getFiles()) {
+            if (file instanceof PsiJavaFile) return true;
+        }
+        for (PsiDirectory child : directory.getSubdirectories()) {
+            if (containsJavaSource(child)) return true;
+        }
+        return false;
+    }
+
+    private void collectAllExplicitModules(@NotNull List<ModulithModule> result) {
+        ProjectFileIndex index = ProjectRootManager.getInstance(project).getFileIndex();
+        PsiManager manager = PsiManager.getInstance(project);
+        index.iterateContent(file -> {
+            if (!file.isDirectory()
+                    || !index.isInSourceContent(file)
+                    || index.isInTestSourceContent(file)) {
+                return true;
+            }
+            PsiDirectory directory = manager.findDirectory(file);
+            if (directory != null && hasApplicationModule(directory)) {
+                String packageName = packageName(directory);
+                if (!packageName.isEmpty()) {
+                    result.add(toModule(directory, packageName));
+                }
+            }
+            return true;
+        });
     }
 
     @Nullable
@@ -87,53 +119,58 @@ public final class ModulithModuleResolver {
     }
 
 
+    @NotNull
+    public List<PsiDirectory> findDirectoriesForPackage(
+            @NotNull String qualifiedName) {
+        PsiPackage psiPackage =
+                JavaPsiFacade.getInstance(project).findPackage(qualifiedName);
+        if (psiPackage == null) return List.of();
+
+        ProjectFileIndex index =
+                ProjectRootManager.getInstance(project).getFileIndex();
+        List<PsiDirectory> result = new ArrayList<>();
+        for (PsiDirectory directory : psiPackage.getDirectories()) {
+            VirtualFile virtualFile = directory.getVirtualFile();
+            if (virtualFile != null
+                    && index.isInSourceContent(virtualFile)
+                    && !index.isInTestSourceContent(virtualFile)) {
+                result.add(directory);
+            }
+        }
+        return result;
+    }
+
     @Nullable
     public PsiDirectory findDirectoryForPackage(
             @NotNull String qualifiedName) {
-
-        PsiPackage psiPackage =
-                JavaPsiFacade.getInstance(project)
-                        .findPackage(qualifiedName);
-
-        if (psiPackage == null) {
-            return null;
-        }
-
-        PsiDirectory[] directories =
-                psiPackage.getDirectories();
-
-        if (directories.length == 0) {
-            return null;
-        }
-
-        ProjectFileIndex index =
-                ProjectRootManager
-                        .getInstance(project)
-                        .getFileIndex();
-
-        for (PsiDirectory directory : directories) {
-            VirtualFile virtualFile =
-                    directory.getVirtualFile();
-
-            if (virtualFile != null
-                    && index.isInSourceContent(virtualFile)) {
-                return directory;
-            }
-        }
-
-        return null;
+        List<PsiDirectory> directories = findDirectoriesForPackage(qualifiedName);
+        return directories.isEmpty() ? null : directories.get(0);
     }
 
-    private void collectExplicitModules(@NotNull PsiDirectory directory, @NotNull String rootPackage, @NotNull List<ModulithModule> result) {
+    private void collectExplicitModules(
+            @NotNull PsiDirectory directory,
+            @NotNull String rootPackage,
+            @NotNull List<ModulithModule> result) {
         String pkg = packageName(directory);
-        if (!pkg.isEmpty() && pkg.startsWith(rootPackage) && hasApplicationModule(directory)) result.add(toModule(directory, pkg));
-        for (PsiDirectory child : directory.getSubdirectories()) collectExplicitModules(child, rootPackage, result);
+        if (!pkg.isEmpty()
+                && (pkg.equals(rootPackage) || pkg.startsWith(rootPackage + "."))
+                && hasApplicationModule(directory)) {
+            result.add(toModule(directory, pkg));
+        }
+        for (PsiDirectory child : directory.getSubdirectories()) {
+            collectExplicitModules(child, rootPackage, result);
+        }
     }
 
-    private void collectNestedExplicitModules(@NotNull PsiDirectory directory, @NotNull List<ModulithModule> result) {
+    private void collectNestedExplicitModules(
+            @NotNull PsiDirectory directory,
+            @NotNull List<ModulithModule> result) {
         for (PsiDirectory child : directory.getSubdirectories()) {
             if (hasApplicationModule(child)) {
-                result.add(toModule(child, packageName(child)));
+                String packageName = packageName(child);
+                if (!packageName.isEmpty() && containsJavaSource(child)) {
+                    result.add(toModule(child, packageName));
+                }
             }
             collectNestedExplicitModules(child, result);
         }
@@ -414,7 +451,8 @@ public final class ModulithModuleResolver {
         index.iterateContent(file -> {
 
             if (!file.isDirectory()
-                    || !index.isInSourceContent(file)) {
+                    || !index.isInSourceContent(file)
+                    || index.isInTestSourceContent(file)) {
                 return true;
             }
 
@@ -508,17 +546,35 @@ public final class ModulithModuleResolver {
     private String findSpringBootRootPackage() {
         ProjectFileIndex index = ProjectRootManager.getInstance(project).getFileIndex();
         PsiManager manager = PsiManager.getInstance(project);
-        final String[] result = {""};
+        List<String> candidates = new ArrayList<>();
+
         index.iterateContent(file -> {
-            if (!file.isDirectory() || !index.isInSourceContent(file)) return true;
+            if (!file.isDirectory()
+                    || !index.isInSourceContent(file)
+                    || index.isInTestSourceContent(file)) {
+                return true;
+            }
             PsiDirectory directory = manager.findDirectory(file);
             if (directory != null && containsSpringBootApplication(directory)) {
-                result[0] = packageName(directory);
-                return false;
+                String packageName = packageName(directory);
+                if (!packageName.isEmpty()) {
+                    candidates.add(packageName);
+                }
             }
             return true;
         });
-        return result[0];
+
+        return findMostSpecificCommonPackage(candidates);
+    }
+
+    @NotNull
+    private String findMostSpecificCommonPackage(@NotNull List<String> packages) {
+        if (packages.isEmpty()) return "";
+        if (packages.size() == 1) return packages.get(0);
+
+        // Multiple Spring Boot entry points are possible. Use their common
+        // package instead of arbitrarily selecting the first one.
+        return findCommonPackage(packages);
     }
 
     private boolean containsSpringBootApplication(

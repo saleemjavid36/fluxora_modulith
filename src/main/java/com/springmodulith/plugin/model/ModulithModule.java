@@ -1,6 +1,7 @@
 package com.springmodulith.plugin.model;
 
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -122,6 +123,19 @@ public final class ModulithModule {
 
     public NamedInterface findNamedInterface(@NotNull String id) {
         return namedInterfaces.stream().filter(i -> i.getName().equals(id)).findFirst().orElse(null);
+    }
+
+    @Nullable
+    public NamedInterface findNamedInterfaceForType(
+            @NotNull String qualifiedType,
+            @NotNull String targetPackage) {
+        for (NamedInterface namedInterface : namedInterfaces) {
+            if (namedInterface.containsType(qualifiedType)
+                    || namedInterface.containsPackage(targetPackage)) {
+                return namedInterface;
+            }
+        }
+        return null;
     }
 
     private boolean matches(@NotNull String id) {

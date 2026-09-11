@@ -3,6 +3,7 @@ package com.springmodulith.plugin.toolwindow;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBList;
 import com.intellij.util.ui.JBUI;
+import com.springmodulith.plugin.model.ModulithDependencyGraph;
 import com.springmodulith.plugin.model.ModulithModule;
 import com.springmodulith.plugin.model.NamedInterface;
 import org.jetbrains.annotations.NotNull;
@@ -11,7 +12,6 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
-import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import java.awt.BorderLayout;
@@ -23,8 +23,8 @@ public final class ModulithModuleDetailsPanel extends JPanel {
     private final JBLabel moduleName = new JBLabel();
     private final JBLabel packageName = new JBLabel();
     private final JBLabel status = new JBLabel();
-
     private final JPanel content = new JPanel();
+    private ModulithDependencyGraph graph;
 
     public ModulithModuleDetailsPanel() {
         setLayout(new BorderLayout());
@@ -33,148 +33,138 @@ public final class ModulithModuleDetailsPanel extends JPanel {
         JPanel header = new JPanel();
         header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
 
-        moduleName.setFont(
-                moduleName.getFont().deriveFont(18.0f)
-        );
-
-        packageName.setBorder(
-                JBUI.Borders.emptyTop(4)
-        );
-
-        status.setBorder(
-                JBUI.Borders.emptyTop(4)
-        );
+        moduleName.setFont(moduleName.getFont().deriveFont(18.0f));
+        packageName.setBorder(JBUI.Borders.emptyTop(4));
+        status.setBorder(JBUI.Borders.emptyTop(4));
 
         header.add(moduleName);
         header.add(packageName);
         header.add(status);
-
         add(header, BorderLayout.NORTH);
 
-        content.setLayout(
-                new BoxLayout(content, BoxLayout.Y_AXIS)
-        );
-
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         add(content, BorderLayout.CENTER);
-
         clear();
     }
 
-    public void showModule(
-            @Nullable ModulithModule module) {
+    public void setGraph(@Nullable ModulithDependencyGraph graph) {
+        this.graph = graph;
+        if (graph == null) {
+            clear();
+        } else {
+            clear();
+        }
+    }
 
+    public void showModule(@Nullable ModulithModule module) {
         if (module == null) {
             clear();
             return;
         }
 
         moduleName.setText(module.getName());
-
-        packageName.setText(
-                "Package: " + module.getPackageName()
-        );
-
-        status.setText(
-                "Status: " +
-                        (module.isOpen() ? "OPEN" : "CLOSED")
-        );
+        packageName.setText("Package: " + module.getPackageName());
+        status.setText("Status: " + (module.isOpen() ? "OPEN" : "CLOSED")
+                + "  •  " + (module.isAllowedDependenciesConfigured()
+                ? "explicit allowedDependencies"
+                : "no explicit allowedDependencies"));
 
         content.removeAll();
 
-        addSection(
-                "Allowed dependencies",
-                getAllowedDependencies(module)
-        );
-
-        addSection(
-                "Named interfaces",
-                getNamedInterfaces(module)
-        );
+        addSection("Allowed dependencies", new ArrayList<>(module.getAllowedDependencies()));
+        addSection("Named interfaces", getNamedInterfaces(module));
+        addSection("Outgoing dependencies", getOutgoingDependencies(module));
+        addSection("Incoming dependencies", getIncomingDependencies(module));
+        addSection("Cycle status", getCycleStatus(module));
 
         revalidate();
         repaint();
     }
 
-    private List<String> getAllowedDependencies(
-            @NotNull ModulithModule module) {
-
-        return new ArrayList<>(
-                module.getAllowedDependencies()
-        );
-    }
-
-    private List<String> getNamedInterfaces(
-            @NotNull ModulithModule module) {
-
+    private List<String> getNamedInterfaces(@NotNull ModulithModule module) {
         List<String> result = new ArrayList<>();
-
-        for (NamedInterface namedInterface :
-                module.getNamedInterfaces()) {
-
-            result.add(
-                    namedInterface.getName()
-            );
+        for (NamedInterface namedInterface : module.getNamedInterfaces()) {
+            result.add(namedInterface.getName() + " — " + namedInterface.getPackageName());
         }
-
         return result;
     }
 
-    private void addSection(
-            @NotNull String title,
-            @NotNull List<String> values) {
+    private List<String> getOutgoingDependencies(@NotNull ModulithModule module) {
+        if (graph == null) return List.of();
+        List<String> result = new ArrayList<>();
+        for (ModulithDependencyGraph.ModuleDependency dependency : graph.getOutgoingDependencies(module)) {
+            String status = dependency.isForbidden()
+                    ? "FORBIDDEN"
+                    : dependency.isNamedInterface()
+                    ? "NAMED INTERFACE"
+                    : "ALLOWED";
+            if (dependency.isApiViolation()) status += " + API violation";
+            if (graph.isCyclicEdge(dependency)) status += " + CYCLE";
+            String interfaceName = dependency.namedInterface() == null
+                    ? ""
+                    : " :: " + dependency.namedInterface();
+            result.add(dependency.targetPackage() + interfaceName + " [" + status + "]");
+        }
+        return result;
+    }
 
-        content.add(
-                Box.createVerticalStrut(16)
-        );
+    private List<String> getIncomingDependencies(@NotNull ModulithModule module) {
+        if (graph == null) return List.of();
+        List<String> result = new ArrayList<>();
+        for (ModulithDependencyGraph.ModuleDependency dependency : graph.getIncomingDependencies(module)) {
+            result.add(dependency.sourcePackage() + " [" + edgeStatus(dependency) + "]");
+        }
+        return result;
+    }
 
-        JLabel titleLabel =
-                new JBLabel(title);
+    private String edgeStatus(@NotNull ModulithDependencyGraph.ModuleDependency dependency) {
+        String status = dependency.isForbidden()
+                ? "FORBIDDEN"
+                : dependency.isNamedInterface()
+                ? "NAMED INTERFACE"
+                : "ALLOWED";
+        if (dependency.isApiViolation()) status += " + API violation";
+        if (graph != null && graph.isCyclicEdge(dependency)) status += " + CYCLE";
+        return status;
+    }
 
-        titleLabel.setFont(
-                titleLabel.getFont().deriveFont(
-                        14.0f
-                )
-        );
+    private List<String> getCycleStatus(@NotNull ModulithModule module) {
+        if (graph == null) return List.of("No graph loaded");
+        List<String> result = new ArrayList<>();
+        for (ModulithDependencyGraph.ModuleDependency dependency : graph.getDependencies()) {
+            if (dependency.sourcePackage().equals(module.getPackageName())
+                    && graph.isCyclicEdge(dependency)) {
+                result.add("Cycle detected through " + dependency.targetPackage());
+            }
+        }
+        if (result.isEmpty()) result.add(module.isOpen()
+                ? "Open modules are excluded from cycle detection"
+                : "No dependency cycle detected");
+        return result;
+    }
 
+    private void addSection(@NotNull String title, @NotNull List<String> values) {
+        content.add(Box.createVerticalStrut(14));
+        JLabel titleLabel = new JBLabel(title);
+        titleLabel.setFont(titleLabel.getFont().deriveFont(14.0f));
         content.add(titleLabel);
 
         if (values.isEmpty()) {
-            content.add(
-                    new JBLabel("None")
-            );
-        } else {
-            JBList<String> list =
-                    new JBList<>(values);
-
-            list.setVisibleRowCount(
-                    Math.min(values.size(), 8)
-            );
-
-            list.setBorder(
-                    BorderFactory.createEmptyBorder(
-                            4,
-                            8,
-                            4,
-                            8
-                    )
-            );
-
-            content.add(list);
+            content.add(new JBLabel("None"));
+            return;
         }
+
+        JBList<String> list = new JBList<>(values);
+        list.setVisibleRowCount(Math.min(values.size(), 8));
+        list.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
+        content.add(list);
     }
 
     public void clear() {
-
-        moduleName.setText(
-                "No module selected"
-        );
-
+        moduleName.setText("No module selected");
         packageName.setText("");
-
         status.setText("");
-
         content.removeAll();
-
         revalidate();
         repaint();
     }

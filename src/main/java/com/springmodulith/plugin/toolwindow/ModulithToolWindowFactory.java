@@ -25,6 +25,8 @@ import java.awt.BorderLayout;
 
 public final class ModulithToolWindowFactory
         implements ToolWindowFactory {
+    private ModulithDependencyGraphPanel graphPanel;
+    private ModulithModuleDetailsPanel moduleDetailsPanel;
 
     @Override
     public void createToolWindowContent(
@@ -76,14 +78,14 @@ public final class ModulithToolWindowFactory
                 BorderLayout.NORTH
         );
 
-        ModulithDependencyGraphPanel graphPanel =
+        graphPanel =
                 new ModulithDependencyGraphPanel(project);
 
-        ModulithModuleDetailsPanel detailsPanel =
+        moduleDetailsPanel =
                 new ModulithModuleDetailsPanel();
 
         graphPanel.setModuleSelectionListener(
-                detailsPanel::showModule
+                moduleDetailsPanel::showModule
         );
 
         JBScrollPane graphScrollPane =
@@ -99,7 +101,7 @@ public final class ModulithToolWindowFactory
                 new JSplitPane(
                         JSplitPane.HORIZONTAL_SPLIT,
                         graphScrollPane,
-                        detailsPanel
+                        moduleDetailsPanel
                 );
 
         splitPane.setResizeWeight(0.65);
@@ -136,6 +138,7 @@ public final class ModulithToolWindowFactory
                                         false
                                 )
                 );
+
     }
 
     private void loadGraph(
@@ -169,6 +172,7 @@ public final class ModulithToolWindowFactory
                     }
 
                     graphPanel.setGraph(graph);
+                    moduleDetailsPanel.setGraph(graph);
                     refreshButton.setEnabled(true);
                 });
             }
