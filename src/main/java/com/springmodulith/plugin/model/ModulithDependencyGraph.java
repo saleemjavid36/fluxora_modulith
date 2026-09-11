@@ -17,7 +17,10 @@ public final class ModulithDependencyGraph {
             @NotNull List<ModulithModule> modules,
             @NotNull Set<ModuleDependency> dependencies) {
 
-        this.modules = Collections.unmodifiableList(new ArrayList<>(modules));
+        this.modules = Collections.unmodifiableList(
+                new ArrayList<>(modules)
+        );
+
         this.dependencies = Collections.unmodifiableSet(
                 new LinkedHashSet<>(dependencies)
         );

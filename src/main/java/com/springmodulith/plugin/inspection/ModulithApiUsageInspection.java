@@ -4,9 +4,19 @@ import com.intellij.codeInspection.AbstractBaseJavaLocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.openapi.project.Project;
-import com.intellij.psi.*;
+import com.intellij.psi.JavaElementVisitor;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiImportStatement;
+import com.intellij.psi.PsiJavaCodeReferenceElement;
+import com.intellij.psi.PsiJavaFile;
+import com.springmodulith.plugin.configuration.ModulithSettings;
+import com.springmodulith.plugin.model.ModulithModule;
 import com.springmodulith.plugin.quickfix.ExposePackageAsNamedInterfaceFix;
 import com.springmodulith.plugin.quickfix.MarkClassNamedInterfaceFix;
+import com.springmodulith.plugin.resolver.ModulithModuleResolver;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -15,18 +25,21 @@ import java.util.List;
 public final class ModulithApiUsageInspection
         extends AbstractBaseJavaLocalInspectionTool {
 
-    private static final String APPLICATION_MODULE =
-            "org.springframework.modulith.ApplicationModule";
-
-    private static final String NAMED_INTERFACE =
-            "org.springframework.modulith.NamedInterface";
-
     @Override
     public @NotNull PsiElementVisitor buildVisitor(
             @NotNull ProblemsHolder holder,
             boolean isOnTheFly) {
 
         Project project = holder.getProject();
+
+        if (!ModulithSettings.getInstance(project)
+                .isInspectApiUsage()) {
+
+            return PsiElementVisitor.EMPTY_VISITOR;
+        }
+
+        ModulithModuleResolver resolver =
+                new ModulithModuleResolver(project);
 
         return new JavaElementVisitor() {
 
@@ -37,29 +50,33 @@ public final class ModulithApiUsageInspection
                 PsiJavaCodeReferenceElement reference =
                         statement.getImportReference();
 
-                if (reference == null) {
-                    return;
+                if (reference != null) {
+                    checkReference(
+                            reference,
+                            holder,
+                            resolver
+                    );
                 }
-
-                checkReference(
-                        reference,
-                        holder,
-                        project
-                );
             }
 
             @Override
             public void visitReferenceElement(
                     @NotNull PsiJavaCodeReferenceElement reference) {
 
-                if (reference.getParent() instanceof PsiImportStatement) {
+                /*
+                 * Imports are already handled by
+                 * visitImportStatement().
+                 */
+                if (reference.getParent()
+                        instanceof PsiImportStatement) {
+
                     return;
                 }
 
                 checkReference(
                         reference,
                         holder,
-                        project
+                        resolver
                 );
             }
         };
@@ -68,29 +85,33 @@ public final class ModulithApiUsageInspection
     private static void checkReference(
             @NotNull PsiJavaCodeReferenceElement reference,
             @NotNull ProblemsHolder holder,
-            @NotNull Project project) {
+            @NotNull ModulithModuleResolver resolver) {
 
-        PsiClass targetClass =
-                resolveTargetClass(reference);
+        PsiElement resolved = reference.resolve();
 
-        if (targetClass == null) {
+        /*
+         * Ignore unresolved references, methods,
+         * fields, packages, etc.
+         */
+        if (!(resolved instanceof PsiClass targetClass)) {
             return;
         }
 
         PsiFile sourceFile =
                 reference.getContainingFile();
 
-        if (!(sourceFile instanceof PsiJavaFile)) {
-            return;
-        }
+        PsiFile targetFile =
+                targetClass.getContainingFile();
 
-        PsiJavaFile sourceJavaFile =
-                (PsiJavaFile) sourceFile;
+        /*
+         * Only Java source files participate.
+         *
+         * This automatically prevents warnings for
+         * JDK/third-party classes.
+         */
+        if (!(sourceFile instanceof PsiJavaFile sourceJavaFile)
+                || !(targetFile instanceof PsiJavaFile targetJavaFile)) {
 
-        PsiJavaFile targetJavaFile =
-                getJavaFile(targetClass);
-
-        if (targetJavaFile == null) {
             return;
         }
 
@@ -100,52 +121,43 @@ public final class ModulithApiUsageInspection
         String targetPackage =
                 targetJavaFile.getPackageName();
 
-        if (sourcePackage == null
-                || sourcePackage.isEmpty()
-                || targetPackage == null
+        if (sourcePackage.isEmpty()
                 || targetPackage.isEmpty()) {
+
             return;
         }
 
-        String sourceModule =
-                findApplicationModule(
-                        project,
+        ModulithModule sourceModule =
+                resolver.resolveModule(
+                        sourceJavaFile,
                         sourcePackage
                 );
 
-        String targetModule =
-                findApplicationModule(
-                        project,
+        ModulithModule targetModule =
+                resolver.resolveModule(
+                        targetJavaFile,
                         targetPackage
                 );
 
+        /*
+         * If either side is not a recognized module,
+         * this is not a Modulith API boundary.
+         */
         if (sourceModule == null
                 || targetModule == null) {
-            return;
-        }
-
-        /*
-         * Same module -> no API violation.
-         */
-        if (sourceModule.equals(targetModule)) {
-            return;
-        }
-
-        /*
-         * Target is exposed through a named interface -> allowed.
-         */
-        if (isExposedThroughNamedInterface(
-                project,
-                targetClass,
-                targetPackage,
-                targetModule)) {
 
             return;
         }
 
         /*
-         * Different module + internal type -> violation.
+         * Same module -> completely valid.
          */
+        if (sourceModule.getPackageName()
+                .equals(targetModule.getPackageName())) {
+
+            return;
+        }
+
         String qualifiedName =
                 targetClass.getQualifiedName();
 
@@ -153,272 +165,73 @@ public final class ModulithApiUsageInspection
             return;
         }
 
-        LocalQuickFix[] fixes = createApiQuickFixes(
-                targetClass,
-                targetPackage
-        );
+        /*
+         * Ask the module model whether this type is
+         * part of the module's exposed API.
+         *
+         * This handles:
+         *
+         * - open modules
+         * - base package API
+         * - package-level @NamedInterface
+         * - class-level @NamedInterface
+         */
+        if (targetModule.exposes(
+                qualifiedName,
+                targetPackage)) {
+
+            return;
+        }
+
+        /*
+         * Different module + internal type
+         * = API violation.
+         */
+        LocalQuickFix[] fixes =
+                createApiQuickFixes(
+                        targetClass,
+                        targetPackage
+                );
 
         holder.registerProblem(
                 reference.getReferenceNameElement(),
                 "Modulith API violation: "
-                        + sourceModule
+                        + sourceModule.getName()
                         + " accesses internal type "
                         + qualifiedName
                         + " from module "
-                        + targetModule,
+                        + targetModule.getName(),
                 fixes
         );
     }
 
-    private static PsiClass resolveTargetClass(
-            @NotNull PsiJavaCodeReferenceElement reference) {
-
-        PsiElement resolved =
-                reference.resolve();
-
-        if (resolved instanceof PsiClass) {
-            return (PsiClass) resolved;
-        }
-
-        return null;
-    }
-
-    private static PsiJavaFile getJavaFile(
-            @NotNull PsiClass psiClass) {
-
-        PsiFile file =
-                psiClass.getContainingFile();
-
-        if (file instanceof PsiJavaFile) {
-            return (PsiJavaFile) file;
-        }
-
-        return null;
-    }
-
-    private static String findApplicationModule(
-            @NotNull Project project,
-            @NotNull String packageName) {
-
-        String currentPackage =
-                packageName;
-
-        while (currentPackage != null
-                && !currentPackage.isEmpty()) {
-
-            PsiPackage psiPackage =
-                    JavaPsiFacade
-                            .getInstance(project)
-                            .findPackage(currentPackage);
-
-            if (psiPackage != null
-                    && hasApplicationModuleAnnotation(
-                    psiPackage)) {
-
-                return currentPackage;
-            }
-
-            int lastDot =
-                    currentPackage.lastIndexOf('.');
-
-            if (lastDot < 0) {
-                break;
-            }
-
-            currentPackage =
-                    currentPackage.substring(
-                            0,
-                            lastDot
-                    );
-        }
-
-        return null;
-    }
-
-    private static boolean hasApplicationModuleAnnotation(
-            @NotNull PsiPackage psiPackage) {
-
-        for (PsiDirectory directory :
-                psiPackage.getDirectories()) {
-
-            PsiFile packageInfo =
-                    directory.findFile(
-                            "package-info.java"
-                    );
-
-            if (!(packageInfo instanceof PsiJavaFile)) {
-                continue;
-            }
-
-            PsiJavaFile javaFile =
-                    (PsiJavaFile) packageInfo;
-
-            PsiPackageStatement packageStatement =
-                    javaFile.getPackageStatement();
-
-            if (packageStatement == null) {
-                continue;
-            }
-
-            PsiModifierList annotationList =
-                    packageStatement.getAnnotationList();
-
-            if (annotationList == null) {
-                continue;
-            }
-
-            PsiAnnotation annotation =
-                    annotationList.findAnnotation(APPLICATION_MODULE);
-
-            if (annotation != null) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static boolean isExposedThroughNamedInterface(
-            @NotNull Project project,
-            @NotNull PsiClass targetClass,
-            @NotNull String targetPackage,
-            @NotNull String targetModule) {
-
-        /*
-         * Walk from target package towards module root.
-         *
-         * Example:
-         *
-         * com.springmodulith.user.api
-         *
-         * -> com.springmodulith.user
-         */
-        String currentPackage =
-                targetPackage;
-
-        while (currentPackage != null
-                && !currentPackage.isEmpty()
-                && isSameOrChildPackage(
-                currentPackage,
-                targetModule)) {
-
-            PsiPackage psiPackage =
-                    JavaPsiFacade
-                            .getInstance(project)
-                            .findPackage(currentPackage);
-
-            if (psiPackage != null
-                    && hasNamedInterfaceAnnotation(
-                    psiPackage)) {
-
-                return true;
-            }
-
-            if (currentPackage.equals(targetModule)) {
-                break;
-            }
-
-            int lastDot =
-                    currentPackage.lastIndexOf('.');
-
-            if (lastDot < 0) {
-                break;
-            }
-
-            currentPackage =
-                    currentPackage.substring(
-                            0,
-                            lastDot
-                    );
-        }
-
-        /*
-         * Also support a type explicitly annotated
-         * with @NamedInterface.
-         */
-        PsiAnnotation annotation =
-                targetClass.getAnnotation(
-                        NAMED_INTERFACE
-                );
-
-        return annotation != null;
-    }
-
-    private static boolean hasNamedInterfaceAnnotation(
-            @NotNull PsiPackage psiPackage) {
-
-        for (PsiDirectory directory :
-                psiPackage.getDirectories()) {
-
-            PsiFile packageInfo =
-                    directory.findFile("package-info.java");
-
-            if (!(packageInfo instanceof PsiJavaFile)) {
-                continue;
-            }
-
-            PsiJavaFile javaFile =
-                    (PsiJavaFile) packageInfo;
-
-            PsiPackageStatement packageStatement =
-                    javaFile.getPackageStatement();
-
-            if (packageStatement == null) {
-                continue;
-            }
-
-            PsiModifierList annotationList =
-                    packageStatement.getAnnotationList();
-
-            if (annotationList == null) {
-                continue;
-            }
-
-            PsiAnnotation annotation =
-                    annotationList.findAnnotation(NAMED_INTERFACE);
-
-            if (annotation != null) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static boolean isSameOrChildPackage(
-            @NotNull String packageName,
-            @NotNull String modulePackage) {
-
-        return packageName.equals(modulePackage)
-                || packageName.startsWith(
-                modulePackage + "."
-        );
-    }
-
+    @NotNull
     private static LocalQuickFix[] createApiQuickFixes(
             @NotNull PsiClass targetClass,
             @NotNull String targetPackage) {
 
-        List<LocalQuickFix> fixes = new ArrayList<>();
+        List<LocalQuickFix> fixes =
+                new ArrayList<>();
 
-        String qualifiedName =
-                targetClass.getQualifiedName();
+        String simpleName =
+                targetClass.getName();
 
-        if (qualifiedName != null) {
-            String simpleName =
-                    targetClass.getName();
+        /*
+         * Offer class-level @NamedInterface.
+         */
+        if (simpleName != null
+                && !simpleName.isEmpty()) {
 
-            if (simpleName != null
-                    && !simpleName.isEmpty()) {
-
-                fixes.add(
-                        new MarkClassNamedInterfaceFix(
-                                simpleName
-                        )
-                );
-            }
+            fixes.add(
+                    new MarkClassNamedInterfaceFix(
+                            simpleName
+                    )
+            );
         }
 
+        /*
+         * Offer package-level @NamedInterface.
+         */
         fixes.add(
                 new ExposePackageAsNamedInterfaceFix(
                         targetPackage
