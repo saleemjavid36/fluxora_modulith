@@ -1,9 +1,9 @@
 package com.springmodulith.plugin.toolwindow;
 
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.Task;
+import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowFactory;
@@ -77,7 +77,7 @@ public final class ModulithToolWindowFactory
         );
 
         ModulithDependencyGraphPanel graphPanel =
-                new ModulithDependencyGraphPanel();
+                new ModulithDependencyGraphPanel(project);
 
         ModulithModuleDetailsPanel detailsPanel =
                 new ModulithModuleDetailsPanel();
@@ -143,10 +143,7 @@ public final class ModulithToolWindowFactory
             @NotNull ModulithDependencyGraphPanel graphPanel,
             @NotNull JButton refreshButton) {
 
-        refreshButton.setEnabled(
-                false
-        );
-
+        refreshButton.setEnabled(false);
         graphPanel.clearGraph();
 
         new Task.Backgroundable(
@@ -154,37 +151,35 @@ public final class ModulithToolWindowFactory
                 "Analyzing Spring Modulith modules",
                 true
         ) {
-
             @Override
-            public void run(
-                    @NotNull ProgressIndicator indicator) {
+            public void run(@NotNull ProgressIndicator indicator) {
 
-                indicator.setIndeterminate(
-                        true
-                );
+                indicator.setIndeterminate(true);
 
                 ModulithDependencyGraph graph =
-                        ReadAction.compute(
-                                () ->
-                                        new ModulithDependencyGraphAnalyzer(
-                                                project
-                                        ).analyze()
-                        );
+                        DumbService.getInstance(project)
+                                .runReadActionInSmartMode(
+                                        () -> new ModulithDependencyGraphAnalyzer(project)
+                                                .analyze()
+                                );
 
-                ApplicationManager
-                        .getApplication()
-                        .invokeLater(
-                                () -> {
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    if (project.isDisposed()) {
+                        return;
+                    }
 
-                                    graphPanel.setGraph(
-                                            graph
-                                    );
+                    graphPanel.setGraph(graph);
+                    refreshButton.setEnabled(true);
+                });
+            }
 
-                                    refreshButton.setEnabled(
-                                            true
-                                    );
-                                }
-                        );
+            @Override
+            public void onThrowable(@NotNull Throwable error) {
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    if (!project.isDisposed()) {
+                        refreshButton.setEnabled(true);
+                    }
+                });
             }
         }.queue();
     }

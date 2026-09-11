@@ -3,20 +3,7 @@ package com.springmodulith.plugin.resolver;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.roots.ProjectRootManager;
-import com.intellij.psi.JavaDirectoryService;
-import com.intellij.psi.PsiAnnotation;
-import com.intellij.psi.PsiAnnotationMemberValue;
-import com.intellij.psi.PsiArrayInitializerMemberValue;
-import com.intellij.psi.PsiClass;
-import com.intellij.psi.PsiDirectory;
-import com.intellij.psi.PsiFile;
-import com.intellij.psi.PsiJavaFile;
-import com.intellij.psi.PsiLiteralExpression;
-import com.intellij.psi.PsiManager;
-import com.intellij.psi.PsiModifierList;
-import com.intellij.psi.PsiNameValuePair;
-import com.intellij.psi.PsiPackage;
-import com.intellij.psi.PsiPackageStatement;
+import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.springmodulith.plugin.configuration.ModulithSettings;
 import com.springmodulith.plugin.model.ModulithModule;
@@ -284,15 +271,54 @@ public final class ModulithModuleResolver {
     }
 
     @Nullable
-    private PsiAnnotation findPackageAnnotation(@NotNull PsiDirectory directory, @NotNull String fqn) {
+    private PsiAnnotation findPackageAnnotation(
+            @NotNull PsiDirectory directory,
+            @NotNull String fqn) {
+
         for (PsiFile file : directory.getFiles()) {
-            if (!(file instanceof PsiJavaFile javaFile)) continue;
-            PsiPackageStatement statement = javaFile.getPackageStatement();
-            if (statement == null) continue;
-            PsiModifierList list = statement.getAnnotationList();
-            if (list == null) continue;
-            for (PsiAnnotation annotation : list.getAnnotations()) if (fqn.equals(annotation.getQualifiedName())) return annotation;
+
+            if (!(file instanceof PsiJavaFile javaFile)) {
+                continue;
+            }
+
+            PsiPackageStatement statement =
+                    javaFile.getPackageStatement();
+
+            if (statement == null) {
+                continue;
+            }
+
+            PsiModifierList list =
+                    statement.getAnnotationList();
+
+            if (list == null) {
+                continue;
+            }
+
+            for (PsiAnnotation annotation :
+                    list.getAnnotations()) {
+
+                PsiJavaCodeReferenceElement reference =
+                        annotation.getNameReferenceElement();
+
+                if (reference == null) {
+                    continue;
+                }
+
+                String annotationText =
+                        reference.getText();
+
+                if (fqn.equals(annotationText)
+                        || "ApplicationModule".equals(annotationText)
+                        && APPLICATION_MODULE.equals(fqn)
+                        || "NamedInterface".equals(annotationText)
+                        && NAMED_INTERFACE.equals(fqn)) {
+
+                    return annotation;
+                }
+            }
         }
+
         return null;
     }
 
@@ -335,13 +361,48 @@ public final class ModulithModuleResolver {
         return result[0];
     }
 
-    private boolean containsSpringBootApplication(@NotNull PsiDirectory directory) {
+    private boolean containsSpringBootApplication(
+            @NotNull PsiDirectory directory) {
+
         for (PsiFile file : directory.getFiles()) {
-            if (!(file instanceof PsiJavaFile javaFile)) continue;
+
+            if (!(file instanceof PsiJavaFile javaFile)) {
+                continue;
+            }
+
             for (PsiClass psiClass : javaFile.getClasses()) {
-                if (psiClass.hasAnnotation(SPRING_BOOT_APPLICATION) || psiClass.hasAnnotation(SPRING_BOOT_CONFIGURATION)) return true;
+
+                PsiModifierList modifierList =
+                        psiClass.getModifierList();
+
+                if (modifierList == null) {
+                    continue;
+                }
+
+                for (PsiAnnotation annotation :
+                        modifierList.getAnnotations()) {
+
+                    PsiJavaCodeReferenceElement reference =
+                            annotation.getNameReferenceElement();
+
+                    if (reference == null) {
+                        continue;
+                    }
+
+                    String annotationName =
+                            reference.getText();
+
+                    if ("SpringBootApplication".equals(annotationName)
+                            || SPRING_BOOT_APPLICATION.equals(annotationName)
+                            || "SpringBootConfiguration".equals(annotationName)
+                            || SPRING_BOOT_CONFIGURATION.equals(annotationName)) {
+
+                        return true;
+                    }
+                }
             }
         }
+
         return false;
     }
 

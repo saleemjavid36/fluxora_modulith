@@ -52,6 +52,16 @@ class ModulithModuleTest {
         assertFalse(api.containsPackage("com.example.user.internal"));
     }
 
+    @Test
+    void unconfiguredDependenciesAreDetectedByInspectionPolicy() {
+        ModulithModule account = module("account", "com.example.account", false, false, Set.of());
+        ModulithModule user = module("user", "com.example.user", false, false, Set.of());
+
+        assertTrue(account.getAllowedDependencies().isEmpty());
+        assertFalse(account.isAllowedDependenciesConfigured());
+        assertTrue(account.allowsDependency(user));
+    }
+
     private ModulithModule module(String name, String pkg, boolean open, boolean configured, Set<String> deps) {
         return new ModulithModule(name, pkg, open, configured, deps, List.of());
     }

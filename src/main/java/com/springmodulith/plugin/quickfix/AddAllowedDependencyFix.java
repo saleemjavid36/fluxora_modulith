@@ -1,19 +1,12 @@
 package com.springmodulith.plugin.quickfix;
 
+import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.project.Project;
-import com.intellij.psi.JavaPsiFacade;
-import com.intellij.psi.PsiAnnotation;
-import com.intellij.psi.PsiAnnotationMemberValue;
-import com.intellij.psi.PsiDirectory;
-import com.intellij.psi.PsiElement;
-import com.intellij.psi.PsiElementFactory;
-import com.intellij.psi.PsiFileFactory;
-import com.intellij.psi.PsiJavaFile;
-import com.intellij.psi.PsiPackageStatement;
-import com.intellij.psi.PsiModifierList;
+import com.intellij.psi.*;
+import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.ide.highlighter.JavaFileType;
 import com.springmodulith.plugin.resolver.ModulithModuleResolver;
 import org.jetbrains.annotations.NotNull;
@@ -42,65 +35,211 @@ public final class AddAllowedDependencyFix implements LocalQuickFix {
     }
 
     @Override
+    public boolean startInWriteAction() {
+        return false;
+    }
+
+    @Override
     public void applyFix(
             @NotNull Project project,
             @NotNull ProblemDescriptor descriptor) {
 
-        PsiDirectory directory =
-                findPackageDirectory(project, sourceModulePackage);
+        PsiElement element = descriptor.getPsiElement();
 
-        if (directory == null) {
+        if (element == null) {
             return;
         }
 
-        WriteCommandAction.runWriteCommandAction(project, () -> {
+        PsiFile psiFile = element.getContainingFile();
 
-            PsiElementFactory factory =
-                    JavaPsiFacade.getElementFactory(project);
+        if (!(psiFile instanceof PsiJavaFile javaFile)) {
+            return;
+        }
 
-            PsiJavaFile packageInfo =
-                    findPackageInfo(directory);
+        PsiPackageStatement packageStatement =
+                javaFile.getPackageStatement();
 
-            if (packageInfo == null) {
-                createPackageInfo(
-                        project,
-                        directory,
-                        factory
-                );
-                return;
-            }
+        if (packageStatement == null) {
+            return;
+        }
 
-            PsiPackageStatement packageStatement =
-                    packageInfo.getPackageStatement();
+        PsiAnnotation applicationModule =
+                findApplicationModule(javaFile);
 
-            if (packageStatement == null) {
-                return;
-            }
-
-            PsiModifierList annotationList =
-                    packageStatement.getAnnotationList();
-
-            if (annotationList == null) {
-                return;
-            }
-
-            PsiAnnotation applicationModule =
-                    findApplicationModule(annotationList);
-
-            if (applicationModule == null) {
-                addApplicationModuleAnnotation(
-                        factory,
-                        annotationList
-                );
-                return;
-            }
-
-            addDependencyToAnnotation(
-                    factory,
-                    applicationModule
-            );
-        });
+        WriteCommandAction
+                .writeCommandAction(project)
+                .withName("Allow Modulith dependency")
+                .run(() -> {
+                    if (applicationModule != null) {
+                        addDependencyToAnnotation(
+                                project,
+                                applicationModule
+                        );
+                    } else {
+                        addApplicationModuleAnnotation(
+                                project,
+                                packageStatement
+                        );
+                    }
+                });
     }
+
+    private void addDependency(
+            @NotNull Project project,
+            @NotNull PsiAnnotation applicationModule) {
+
+        PsiElementFactory factory =
+                PsiElementFactory.getInstance(project);
+
+        String annotationText =
+                applicationModule.getText();
+
+        PsiNameValuePair allowedAttribute =
+                findAttribute(
+                        applicationModule,
+                        "allowedDependencies"
+                );
+
+        String dependencyLiteral =
+                "\"" + dependency + "\"";
+
+        String newAnnotationText;
+
+        if (allowedAttribute == null) {
+
+            int openParen =
+                    annotationText.indexOf('(');
+
+            int closeParen =
+                    annotationText.lastIndexOf(')');
+
+            if (openParen < 0) {
+
+                newAnnotationText =
+                        annotationText +
+                                "(allowedDependencies = {" +
+                                dependencyLiteral +
+                                "})";
+
+            } else if (closeParen > openParen) {
+
+                String arguments =
+                        annotationText.substring(
+                                openParen + 1,
+                                closeParen
+                        ).trim();
+
+                String newArguments =
+                        arguments.isEmpty()
+                                ? "allowedDependencies = {" +
+                                dependencyLiteral +
+                                "}"
+                                : arguments +
+                                ", allowedDependencies = {" +
+                                dependencyLiteral +
+                                "}";
+
+                newAnnotationText =
+                        annotationText.substring(
+                                0,
+                                openParen + 1
+                        ) +
+                                newArguments +
+                                annotationText.substring(
+                                        closeParen
+                                );
+
+            } else {
+                return;
+            }
+
+        } else {
+
+            PsiAnnotationMemberValue value =
+                    allowedAttribute.getValue();
+
+            if (!(value instanceof PsiArrayInitializerMemberValue)) {
+                return;
+            }
+
+            PsiArrayInitializerMemberValue arrayValue =
+                    (PsiArrayInitializerMemberValue) value;
+
+            if (containsDependencyLiteral(arrayValue)) {
+                return;
+            }
+
+            String valueText =
+                    arrayValue.getText();
+
+            int closingBrace =
+                    valueText.lastIndexOf('}');
+
+            if (closingBrace < 0) {
+                return;
+            }
+
+            boolean hasElements =
+                    arrayValue.getInitializers().length > 0;
+
+            String insertion =
+                    hasElements
+                            ? ", " + dependencyLiteral
+                            : dependencyLiteral;
+
+            String newValueText =
+                    valueText.substring(
+                            0,
+                            closingBrace
+                    ) +
+                            insertion +
+                            valueText.substring(
+                                    closingBrace
+                            );
+
+            int valueStart =
+                    annotationText.indexOf(valueText);
+
+            if (valueStart < 0) {
+                return;
+            }
+
+            newAnnotationText =
+                    annotationText.substring(
+                            0,
+                            valueStart
+                    ) +
+                            newValueText +
+                            annotationText.substring(
+                                    valueStart + valueText.length()
+                            );
+        }
+
+        PsiAnnotation replacement =
+                factory.createAnnotationFromText(
+                        newAnnotationText,
+                        applicationModule
+                );
+
+        applicationModule.replace(replacement);
+    }
+
+    private static PsiNameValuePair findAttribute(
+            @NotNull PsiAnnotation annotation,
+            @NotNull String name) {
+
+        for (PsiNameValuePair attribute :
+                annotation.getParameterList()
+                        .getAttributes()) {
+
+            if (name.equals(attribute.getName())) {
+                return attribute;
+            }
+        }
+
+        return null;
+    }
+
 
     private static PsiJavaFile findPackageInfo(
             @NotNull PsiDirectory directory) {
@@ -141,13 +280,33 @@ public final class AddAllowedDependencyFix implements LocalQuickFix {
     }
 
     private static PsiAnnotation findApplicationModule(
-            @NotNull PsiModifierList annotationList) {
+            @NotNull PsiJavaFile javaFile) {
+
+        PsiPackageStatement packageStatement =
+                javaFile.getPackageStatement();
+
+        if (packageStatement == null) {
+            return null;
+        }
 
         for (PsiAnnotation annotation :
-                annotationList.getAnnotations()) {
+                packageStatement.getAnnotationList()
+                        .getAnnotations()) {
+
+            PsiJavaCodeReferenceElement reference =
+                    annotation.getNameReferenceElement();
+
+            if (reference == null) {
+                continue;
+            }
+
+            String qualifiedName =
+                    reference.getQualifiedName();
 
             if ("org.springframework.modulith.ApplicationModule"
-                    .equals(annotation.getQualifiedName())) {
+                    .equals(qualifiedName)
+                    || "org.springframework.modulith.ApplicationModule"
+                    .equals(reference.getReferenceName())) {
 
                 return annotation;
             }
@@ -156,46 +315,89 @@ public final class AddAllowedDependencyFix implements LocalQuickFix {
         return null;
     }
 
-    private static void addApplicationModuleAnnotation(
-            @NotNull PsiElementFactory factory,
-            @NotNull PsiModifierList annotationList) {
+    private void addApplicationModuleAnnotation(
+            @NotNull Project project,
+            @NotNull PsiPackageStatement packageStatement) {
+
+        PsiElementFactory factory =
+                PsiElementFactory.getInstance(project);
 
         PsiAnnotation annotation =
                 factory.createAnnotationFromText(
                         "@org.springframework.modulith.ApplicationModule(" +
-                                "allowedDependencies = {})",
-                        annotationList
+                                "allowedDependencies = {\"" +
+                                dependency +
+                                "\"})",
+                        packageStatement
                 );
 
-        annotationList.addBefore(
-                annotation,
-                annotationList.getFirstChild()
-        );
+        PsiModifierList annotationList =
+                packageStatement.getAnnotationList();
+
+        if (annotationList != null) {
+            annotationList.addBefore(
+                    annotation,
+                    annotationList.getFirstChild()
+            );
+        } else {
+            packageStatement.addBefore(
+                    annotation,
+                    packageStatement.getFirstChild()
+            );
+        }
     }
 
     private void addDependencyToAnnotation(
-            @NotNull PsiElementFactory factory,
+            @NotNull Project project,
             @NotNull PsiAnnotation annotation) {
+
+        PsiElementFactory factory =
+                PsiElementFactory.getInstance(project);
 
         PsiAnnotationMemberValue value =
                 annotation.findDeclaredAttributeValue(
                         "allowedDependencies"
                 );
 
+        String annotationText = annotation.getText();
+
         if (value == null) {
+            int closeParen =
+                    annotationText.lastIndexOf(')');
+
+            if (closeParen < 0) {
+                return;
+            }
+
+            String newAnnotationText =
+                    annotationText.substring(0, closeParen)
+                            + "allowedDependencies = {\""
+                            + dependency
+                            + "\"}"
+                            + annotationText.substring(closeParen);
+
+            PsiAnnotation replacement =
+                    factory.createAnnotationFromText(
+                            newAnnotationText,
+                            annotation
+                    );
+
+            annotation.replace(replacement);
             return;
         }
 
-        String valueText = value.getText();
-
-        if (!valueText.trim().startsWith("{")
-                || !valueText.trim().endsWith("}")) {
+        if (!(value instanceof PsiArrayInitializerMemberValue)) {
             return;
         }
 
-        if (containsDependency(valueText)) {
+        PsiArrayInitializerMemberValue arrayValue =
+                (PsiArrayInitializerMemberValue) value;
+
+        if (containsDependencyLiteral(arrayValue)) {
             return;
         }
+
+        String valueText = arrayValue.getText();
 
         int closingBrace =
                 valueText.lastIndexOf('}');
@@ -204,57 +406,116 @@ public final class AddAllowedDependencyFix implements LocalQuickFix {
             return;
         }
 
-        String beforeClosingBrace =
-                valueText.substring(0, closingBrace);
-
-        String afterClosingBrace =
-                valueText.substring(closingBrace);
-
-        String insertion;
-
-        if (beforeClosingBrace.trim().equals("{")) {
-            insertion =
-                    "\n        \"" +
-                            dependency +
-                            "\"\n    ";
-        } else {
-            insertion =
-                    ",\n        \"" +
-                            dependency +
-                            "\"\n    ";
-        }
+        String insertion =
+                arrayValue.getInitializers().length == 0
+                        ? "\""
+                        + dependency
+                        + "\""
+                        : ", \""
+                        + dependency
+                        + "\"";
 
         String newValueText =
-                beforeClosingBrace +
-                        insertion +
-                        afterClosingBrace;
+                valueText.substring(0, closingBrace)
+                        + insertion
+                        + valueText.substring(closingBrace);
 
-        PsiAnnotation tempAnnotation =
+        String annotationValueText =
+                annotationText.substring(
+                        0,
+                        annotationText.indexOf(valueText)
+                )
+                        + newValueText
+                        + annotationText.substring(
+                        annotationText.indexOf(valueText)
+                                + valueText.length()
+                );
+
+        PsiAnnotation replacement =
                 factory.createAnnotationFromText(
-                        "@org.springframework.modulith.ApplicationModule(" +
-                                "allowedDependencies = " +
-                                newValueText +
-                                ")",
+                        annotationValueText,
                         annotation
                 );
 
-        PsiAnnotationMemberValue newValue =
-                tempAnnotation.findDeclaredAttributeValue(
-                        "allowedDependencies"
-                );
-
-        if (newValue != null) {
-            value.replace(newValue);
-        }
+        annotation.replace(replacement);
     }
 
-    private boolean containsDependency(
-            @NotNull String valueText) {
+    private void addMissingAllowedDependenciesAttribute(
+            @NotNull PsiElementFactory factory,
+            @NotNull PsiAnnotation annotation) {
 
-        String quotedDependency =
-                "\"" + dependency + "\"";
+        String annotationText = annotation.getText();
+        int openParen = annotationText.indexOf('(');
+        int closeParen = annotationText.lastIndexOf(')');
 
-        return valueText.contains(quotedDependency);
+        if (openParen < 0) {
+            String newAnnotationText =
+                    annotationText +
+                            "(allowedDependencies = {\"" +
+                            dependency +
+                            "\"})";
+
+            PsiAnnotation replacement =
+                    factory.createAnnotationFromText(
+                            newAnnotationText,
+                            annotation
+                    );
+
+            annotation.replace(replacement);
+            return;
+        }
+
+        if (closeParen <= openParen) {
+            return;
+        }
+
+        String arguments =
+                annotationText.substring(
+                        openParen + 1,
+                        closeParen
+                ).trim();
+
+        String dependencyAttribute =
+                "allowedDependencies = {\"" +
+                        dependency +
+                        "\"}";
+
+        String newArguments =
+                arguments.isEmpty()
+                        ? dependencyAttribute
+                        : arguments + ", " + dependencyAttribute;
+
+        String newAnnotationText =
+                annotationText.substring(0, openParen + 1) +
+                        newArguments +
+                        annotationText.substring(closeParen);
+
+        PsiAnnotation replacement =
+                factory.createAnnotationFromText(
+                        newAnnotationText,
+                        annotation
+                );
+
+        annotation.replace(replacement);
+    }
+
+    private boolean containsDependencyLiteral(
+            @NotNull PsiAnnotationMemberValue value) {
+
+        for (PsiLiteralExpression literal :
+                PsiTreeUtil.findChildrenOfType(
+                        value,
+                        PsiLiteralExpression.class
+                )) {
+
+            Object literalValue = literal.getValue();
+
+            if (dependency.equals(literalValue)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static String detectIndentation(
@@ -282,5 +543,13 @@ public final class AddAllowedDependencyFix implements LocalQuickFix {
 
         return new ModulithModuleResolver(project)
                 .findDirectoryForPackage(packageName);
+    }
+
+    @Override
+    public @NotNull IntentionPreviewInfo generatePreview(
+            @NotNull Project project,
+            @NotNull ProblemDescriptor previewDescriptor) {
+
+        return IntentionPreviewInfo.EMPTY;
     }
 }

@@ -43,6 +43,19 @@ public final class ModulithDependencyAnalyzer {
             return false;
         }
 
+        /*
+         * A cross-module reference is a dependency even when the
+         * source module does not declare allowedDependencies yet.
+         * In that case the inspection reports the dependency and the
+         * quick-fix can add the explicit rule.
+         *
+         * Once allowedDependencies is explicitly configured, the
+         * configured rule decides whether the dependency is allowed.
+         */
+        if (!dependency.source().isAllowedDependenciesConfigured()) {
+            return true;
+        }
+
         return !dependency.source().allowsType(
                 qualifiedType,
                 targetPackage,
@@ -70,7 +83,8 @@ public final class ModulithDependencyAnalyzer {
             return null;
         }
 
-        boolean allowed = dependency.source().allowsType(
+        boolean allowed = dependency.source().isAllowedDependenciesConfigured()
+                && dependency.source().allowsType(
                 qualifiedType,
                 targetPackage,
                 dependency.target()
@@ -83,6 +97,11 @@ public final class ModulithDependencyAnalyzer {
         String dependencyName = dependency.source().getName()
                 + " -> "
                 + dependency.target().getName();
+
+        if (!dependency.source().isAllowedDependenciesConfigured()) {
+            return "Modulith module dependency: " + dependencyName
+                    + " (add allowedDependencies to make the dependency explicit)";
+        }
 
         return "Modulith dependency is not allowed: " + dependencyName;
     }

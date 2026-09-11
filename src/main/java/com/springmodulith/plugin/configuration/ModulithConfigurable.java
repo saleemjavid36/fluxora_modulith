@@ -75,9 +75,11 @@ public final class ModulithConfigurable implements Configurable {
         cycles = new JCheckBox("Check module dependency cycles");
 
         c.gridx = 0;
-        c.gridy = 2;
+        c.gridy = 5;
         c.gridwidth = 2;
         c.weightx = 1;
+
+        panel.add(cycles, c);
 
         panel.add(apiUsage, c);
 
@@ -136,8 +138,7 @@ public final class ModulithConfigurable implements Configurable {
 
     @Override
     public void reset() {
-        ModulithSettings s =
-                ModulithSettings.getInstance(project);
+        ModulithSettings s = ModulithSettings.getInstance(project);
 
         rootPackage.setText(s.getRootPackage());
         detectionStrategy.setSelectedItem(s.getDetectionStrategy());

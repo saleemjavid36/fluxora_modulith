@@ -1,26 +1,29 @@
 package com.springmodulith.plugin.toolwindow;
 
+import com.intellij.openapi.project.Project;
 import com.intellij.ui.JBColor;
-import com.intellij.ui.components.JBLabel;
 import com.intellij.util.ui.JBUI;
 import com.springmodulith.plugin.model.ModulithDependencyGraph;
 import com.springmodulith.plugin.model.ModulithModule;
 import org.jetbrains.annotations.NotNull;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
-import java.util.function.Consumer;
+
 import javax.swing.JPanel;
 import java.awt.BasicStroke;
+import java.awt.Cursor;
+import java.awt.Dimension;
 import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Point;
 import java.awt.RenderingHints;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.geom.Line2D;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 public final class ModulithDependencyGraphPanel extends JPanel {
 
@@ -30,68 +33,119 @@ public final class ModulithDependencyGraphPanel extends JPanel {
     private static final int VERTICAL_GAP = 80;
     private static final int PADDING = 60;
 
-    private final Map<String, Point> nodePositions = new HashMap<>();
+    private final Project project;
+
+    private final Map<String, Point> nodePositions =
+            new HashMap<>();
 
     private ModulithDependencyGraph graph;
+    private ModulithModule selectedModule;
+    private ModulithModule hoveredModule;
+
     private Consumer<ModulithModule> moduleSelectionListener;
 
-    public ModulithDependencyGraphPanel() {
-        setBackground(JBColor.background());
-        setBorder(JBUI.Borders.empty(PADDING));
-        addMouseListener(
+    public ModulithDependencyGraphPanel(
+            @NotNull Project project) {
+
+        this.project = project;
+
+        setBackground(
+                JBColor.background()
+        );
+
+        setBorder(
+                JBUI.Borders.empty(PADDING)
+        );
+
+        MouseAdapter mouseAdapter =
                 new MouseAdapter() {
+
                     @Override
-                    public void mouseClicked(
+                    public void mouseMoved(
                             MouseEvent event) {
 
-                        handleModuleClick(
-                                event.getPoint()
+                        ModulithModule module =
+                                findModuleAt(
+                                        event.getPoint()
+                                );
+
+                        hoveredModule = module;
+
+                        setCursor(
+                                module == null
+                                        ? Cursor.getDefaultCursor()
+                                        : Cursor.getPredefinedCursor(
+                                        Cursor.HAND_CURSOR
+                                )
                         );
+
+                        updateTooltip(module);
+
+                        repaint();
                     }
-                }
-        );
+
+                    @Override
+                    public void mouseExited(
+                            MouseEvent event) {
+
+                        hoveredModule = null;
+
+                        setCursor(
+                                Cursor.getDefaultCursor()
+                        );
+
+                        setToolTipText(null);
+
+                        repaint();
+                    }
+
+                    @Override
+                    public void mousePressed(
+                            MouseEvent event) {
+
+                        ModulithModule module =
+                                findModuleAt(
+                                        event.getPoint()
+                                );
+
+                        if (module == null) {
+                            selectedModule = null;
+
+                            notifySelection(null);
+
+                            repaint();
+
+                            return;
+                        }
+
+                        selectedModule = module;
+
+                        notifySelection(module);
+
+                        repaint();
+
+                        if (event.getClickCount() == 2) {
+                            openModule(module);
+                        }
+                    }
+                };
+
+        addMouseListener(mouseAdapter);
+        addMouseMotionListener(mouseAdapter);
     }
-    private void handleModuleClick(
-            @NotNull Point point) {
 
-        if (graph == null ||
-                moduleSelectionListener == null) {
-
-            return;
-        }
-
-        for (ModulithModule module :
-                graph.getModules()) {
-
-            Point position =
-                    nodePositions.get(
-                            module.getPackageName()
-                    );
-
-            if (position == null) {
-                continue;
-            }
-
-            int x = position.x;
-            int y = position.y;
-
-            if (point.x >= x &&
-                    point.x <= x + NODE_WIDTH &&
-                    point.y >= y &&
-                    point.y <= y + NODE_HEIGHT) {
-
-                moduleSelectionListener.accept(
-                        module
-                );
-
-                return;
-            }
-        }
-    }
     public void setModuleSelectionListener(
-            @NotNull Consumer<ModulithModule> listener) {
+            Consumer<ModulithModule> listener) {
 
         this.moduleSelectionListener = listener;
+    }
+
+    private void notifySelection(
+            ModulithModule module) {
+
+        if (moduleSelectionListener != null) {
+            moduleSelectionListener.accept(module);
+        }
     }
 
     public void setGraph(
@@ -99,10 +153,15 @@ public final class ModulithDependencyGraphPanel extends JPanel {
 
         this.graph = graph;
 
+        this.selectedModule = null;
+        this.hoveredModule = null;
+
         calculateLayout();
 
         revalidate();
         repaint();
+
+        notifySelection(null);
     }
 
     @Override
@@ -126,6 +185,7 @@ public final class ModulithDependencyGraphPanel extends JPanel {
 
             paintDependencies(g);
             paintModules(g);
+
         } finally {
             g.dispose();
         }
@@ -149,17 +209,54 @@ public final class ModulithDependencyGraphPanel extends JPanel {
             int x = position.x;
             int y = position.y;
 
-            g.setColor(
-                    module.isOpen()
-                            ? JBColor.namedColor(
-                            "Panel.infoForeground",
-                            JBColor.foreground()
-                    )
-                            : JBColor.namedColor(
-                            "Label.foreground",
-                            JBColor.foreground()
-                    )
-            );
+            boolean selected =
+                    module == selectedModule;
+
+            boolean hovered =
+                    module == hoveredModule;
+
+            boolean dimmed =
+                    selectedModule != null
+                            && !isRelatedToSelection(module);
+
+            if (dimmed) {
+
+                g.setColor(
+                        JBColor.GRAY
+                );
+
+            } else if (selected) {
+
+                g.setColor(
+                        JBColor.namedColor(
+                                "Actions.Blue",
+                                JBColor.BLUE
+                        )
+                );
+
+            } else if (hovered) {
+
+                g.setColor(
+                        JBColor.namedColor(
+                                "Component.focusColor",
+                                JBColor.BLUE
+                        )
+                );
+
+            } else {
+
+                g.setColor(
+                        module.isOpen()
+                                ? JBColor.namedColor(
+                                "Panel.infoForeground",
+                                JBColor.foreground()
+                        )
+                                : JBColor.namedColor(
+                                "Label.foreground",
+                                JBColor.foreground()
+                        )
+                );
+            }
 
             g.fillRoundRect(
                     x,
@@ -190,7 +287,8 @@ public final class ModulithDependencyGraphPanel extends JPanel {
                     g,
                     module,
                     x,
-                    y
+                    y,
+                    dimmed
             );
         }
     }
@@ -199,13 +297,11 @@ public final class ModulithDependencyGraphPanel extends JPanel {
             @NotNull Graphics2D g,
             @NotNull ModulithModule module,
             int x,
-            int y) {
+            int y,
+            boolean dimmed) {
 
         String moduleName =
                 module.getName();
-
-        String packageName =
-                module.getPackageName();
 
         FontMetrics metrics =
                 g.getFontMetrics();
@@ -216,17 +312,16 @@ public final class ModulithDependencyGraphPanel extends JPanel {
         int nameX =
                 x + (NODE_WIDTH - nameWidth) / 2;
 
-        int nameY =
-                y + 30;
-
         g.setColor(
-                JBColor.foreground()
+                dimmed
+                        ? JBColor.GRAY
+                        : JBColor.foreground()
         );
 
         g.drawString(
                 moduleName,
                 nameX,
-                nameY
+                y + 30
         );
 
         String status =
@@ -249,26 +344,10 @@ public final class ModulithDependencyGraphPanel extends JPanel {
                 statusX,
                 y + 50
         );
-
-        String tooltip =
-                moduleName +
-                        " (" +
-                        packageName +
-                        ")";
-
-        setToolTipText(
-                tooltip
-        );
     }
 
     private void paintDependencies(
             @NotNull Graphics2D g) {
-
-        g.setStroke(
-                new BasicStroke(
-                        1.5f
-                )
-        );
 
         for (ModulithDependencyGraph.ModuleDependency dependency :
                 graph.getDependencies()) {
@@ -285,6 +364,43 @@ public final class ModulithDependencyGraphPanel extends JPanel {
 
             if (source == null || target == null) {
                 continue;
+            }
+
+            boolean highlighted =
+                    isDependencyRelatedToSelection(
+                            dependency
+                    );
+
+            boolean dimmed =
+                    selectedModule != null
+                            && !highlighted;
+
+            if (dimmed) {
+
+                g.setColor(
+                        JBColor.GRAY
+                );
+
+                g.setStroke(
+                        new BasicStroke(1.0f)
+                );
+
+            } else {
+
+                g.setColor(
+                        JBColor.namedColor(
+                                "Actions.Blue",
+                                JBColor.BLUE
+                        )
+                );
+
+                g.setStroke(
+                        new BasicStroke(
+                                highlighted
+                                        ? 2.5f
+                                        : 1.5f
+                        )
+                );
             }
 
             drawArrow(
@@ -324,10 +440,6 @@ public final class ModulithDependencyGraphPanel extends JPanel {
                         sourceCenter
                 );
 
-        g.setColor(
-                JBColor.GRAY
-        );
-
         g.draw(
                 new Line2D.Double(
                         start,
@@ -364,29 +476,29 @@ public final class ModulithDependencyGraphPanel extends JPanel {
         int x1 =
                 (int) (
                         end.x +
-                                Math.cos(angle1) *
-                                        arrowSize
+                                Math.cos(angle1)
+                                        * arrowSize
                 );
 
         int y1 =
                 (int) (
                         end.y +
-                                Math.sin(angle1) *
-                                        arrowSize
+                                Math.sin(angle1)
+                                        * arrowSize
                 );
 
         int x2 =
                 (int) (
                         end.x +
-                                Math.cos(angle2) *
-                                        arrowSize
+                                Math.cos(angle2)
+                                        * arrowSize
                 );
 
         int y2 =
                 (int) (
                         end.y +
-                                Math.sin(angle2) *
-                                        arrowSize
+                                Math.sin(angle2)
+                                        * arrowSize
                 );
 
         g.drawLine(
@@ -524,17 +636,154 @@ public final class ModulithDependencyGraphPanel extends JPanel {
                                 VERTICAL_GAP;
 
         setPreferredSize(
-                new java.awt.Dimension(
+                new Dimension(
                         Math.max(width, 600),
                         Math.max(height, 400)
                 )
         );
     }
 
+    private ModulithModule findModuleAt(
+            @NotNull Point point) {
+
+        if (graph == null) {
+            return null;
+        }
+
+        for (ModulithModule module :
+                graph.getModules()) {
+
+            Point position =
+                    nodePositions.get(
+                            module.getPackageName()
+                    );
+
+            if (position == null) {
+                continue;
+            }
+
+            if (new java.awt.Rectangle(
+                    position.x,
+                    position.y,
+                    NODE_WIDTH,
+                    NODE_HEIGHT
+            ).contains(point)) {
+
+                return module;
+            }
+        }
+
+        return null;
+    }
+
+    private boolean isRelatedToSelection(
+            @NotNull ModulithModule module) {
+
+        if (selectedModule == null) {
+            return true;
+        }
+
+        if (module == selectedModule) {
+            return true;
+        }
+
+        for (ModulithDependencyGraph.ModuleDependency dependency :
+                graph.getDependencies()) {
+
+            if (dependency.sourcePackage()
+                    .equals(
+                            selectedModule.getPackageName()
+                    )
+                    &&
+                    dependency.targetPackage()
+                            .equals(
+                                    module.getPackageName()
+                            )) {
+
+                return true;
+            }
+
+            if (dependency.targetPackage()
+                    .equals(
+                            selectedModule.getPackageName()
+                    )
+                    &&
+                    dependency.sourcePackage()
+                            .equals(
+                                    module.getPackageName()
+                            )) {
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private boolean isDependencyRelatedToSelection(
+            @NotNull ModulithDependencyGraph.ModuleDependency dependency) {
+
+        if (selectedModule == null) {
+            return false;
+        }
+
+        String selectedPackage =
+                selectedModule.getPackageName();
+
+        return dependency.sourcePackage()
+                .equals(selectedPackage)
+                ||
+                dependency.targetPackage()
+                        .equals(selectedPackage);
+    }
+
+    private void updateTooltip(
+            ModulithModule module) {
+
+        if (module == null) {
+            setToolTipText(null);
+            return;
+        }
+
+        setToolTipText(
+                module.getName() +
+                        " (" +
+                        module.getPackageName() +
+                        ")"
+        );
+    }
+
+    private void openModule(
+            @NotNull ModulithModule module) {
+
+        ModulithModuleNavigation.openPackage(
+                project,
+                module
+        );
+    }
+
+    public ModulithModule getSelectedModule() {
+        return selectedModule;
+    }
+
+    public void clearSelection() {
+
+        selectedModule = null;
+
+        notifySelection(null);
+
+        repaint();
+    }
+
     public void clearGraph() {
 
         graph = null;
+        selectedModule = null;
+        hoveredModule = null;
+
         nodePositions.clear();
+
+        notifySelection(null);
 
         revalidate();
         repaint();

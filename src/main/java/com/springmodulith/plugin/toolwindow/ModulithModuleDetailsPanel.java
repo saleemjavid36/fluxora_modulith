@@ -6,6 +6,7 @@ import com.intellij.util.ui.JBUI;
 import com.springmodulith.plugin.model.ModulithModule;
 import com.springmodulith.plugin.model.NamedInterface;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -60,11 +61,14 @@ public final class ModulithModuleDetailsPanel extends JPanel {
     }
 
     public void showModule(
-            @NotNull ModulithModule module) {
+            @Nullable ModulithModule module) {
 
-        moduleName.setText(
-                module.getName()
-        );
+        if (module == null) {
+            clear();
+            return;
+        }
+
+        moduleName.setText(module.getName());
 
         packageName.setText(
                 "Package: " + module.getPackageName()
@@ -72,9 +76,7 @@ public final class ModulithModuleDetailsPanel extends JPanel {
 
         status.setText(
                 "Status: " +
-                        (module.isOpen()
-                                ? "OPEN"
-                                : "CLOSED")
+                        (module.isOpen() ? "OPEN" : "CLOSED")
         );
 
         content.removeAll();
