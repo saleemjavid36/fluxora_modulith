@@ -3,6 +3,7 @@ package com.springmodulith.plugin.resolver;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.roots.ProjectRootManager;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.springmodulith.plugin.configuration.ModulithSettings;
@@ -87,20 +88,40 @@ public final class ModulithModuleResolver {
 
 
     @Nullable
-    public PsiDirectory findDirectoryForPackage(@NotNull String qualifiedName) {
-        ProjectFileIndex index = ProjectRootManager.getInstance(project).getFileIndex();
-        PsiManager manager = PsiManager.getInstance(project);
-        final PsiDirectory[] found = {null};
-        index.iterateContent(file -> {
-            if (!file.isDirectory() || !index.isInSourceContent(file)) return true;
-            PsiDirectory directory = manager.findDirectory(file);
-            if (directory != null && qualifiedName.equals(packageName(directory))) {
-                found[0] = directory;
-                return false;
+    public PsiDirectory findDirectoryForPackage(
+            @NotNull String qualifiedName) {
+
+        PsiPackage psiPackage =
+                JavaPsiFacade.getInstance(project)
+                        .findPackage(qualifiedName);
+
+        if (psiPackage == null) {
+            return null;
+        }
+
+        PsiDirectory[] directories =
+                psiPackage.getDirectories();
+
+        if (directories.length == 0) {
+            return null;
+        }
+
+        ProjectFileIndex index =
+                ProjectRootManager
+                        .getInstance(project)
+                        .getFileIndex();
+
+        for (PsiDirectory directory : directories) {
+            VirtualFile virtualFile =
+                    directory.getVirtualFile();
+
+            if (virtualFile != null
+                    && index.isInSourceContent(virtualFile)) {
+                return directory;
             }
-            return true;
-        });
-        return found[0];
+        }
+
+        return null;
     }
 
     private void collectExplicitModules(@NotNull PsiDirectory directory, @NotNull String rootPackage, @NotNull List<ModulithModule> result) {
@@ -325,13 +346,152 @@ public final class ModulithModuleResolver {
     private boolean hasApplicationModule(@NotNull PsiDirectory directory) { return findPackageAnnotation(directory, APPLICATION_MODULE) != null; }
 
     @NotNull
-    private String resolveRootPackage(@Nullable PsiFile contextFile) {
-        ModulithSettings settings = ModulithSettings.getInstance(project);
-        if (!settings.getRootPackage().isEmpty()) return settings.getRootPackage();
-        PsiDirectory contextDirectory = contextFile == null ? null : PsiTreeUtil.getParentOfType(contextFile, PsiDirectory.class);
-        String fromContext = contextDirectory == null ? "" : findNearestSpringBootPackage(contextDirectory);
-        if (!fromContext.isEmpty()) return fromContext;
-        return findSpringBootRootPackage();
+    private String resolveRootPackage(
+            @Nullable PsiFile contextFile) {
+
+        ModulithSettings settings =
+                ModulithSettings.getInstance(project);
+
+        if (!settings.getRootPackage().isEmpty()) {
+            return settings.getRootPackage();
+        }
+
+        if (contextFile != null) {
+
+            PsiDirectory contextDirectory =
+                    PsiTreeUtil.getParentOfType(
+                            contextFile,
+                            PsiDirectory.class
+                    );
+
+            if (contextDirectory != null) {
+
+                String fromContext =
+                        findNearestSpringBootPackage(
+                                contextDirectory
+                        );
+
+                if (!fromContext.isEmpty()) {
+                    return fromContext;
+                }
+            }
+        }
+
+        String springBootRoot =
+                findSpringBootRootPackage();
+
+        if (!springBootRoot.isEmpty()) {
+            return springBootRoot;
+        }
+
+        /*
+         * If no Spring Boot application class can be found,
+         * infer the root from @ApplicationModule packages.
+         */
+        String applicationModuleRoot =
+                findApplicationModuleRootPackage();
+
+        if (!applicationModuleRoot.isEmpty()) {
+            return applicationModuleRoot;
+        }
+
+        return "";
+    }
+    @NotNull
+    private String findApplicationModuleRootPackage() {
+
+        ProjectFileIndex index =
+                ProjectRootManager
+                        .getInstance(project)
+                        .getFileIndex();
+
+        PsiManager manager =
+                PsiManager.getInstance(project);
+
+        List<String> modulePackages =
+                new ArrayList<>();
+
+        index.iterateContent(file -> {
+
+            if (!file.isDirectory()
+                    || !index.isInSourceContent(file)) {
+                return true;
+            }
+
+            PsiDirectory directory =
+                    manager.findDirectory(file);
+
+            if (directory == null) {
+                return true;
+            }
+
+            if (findPackageAnnotation(
+                    directory,
+                    APPLICATION_MODULE
+            ) != null) {
+
+                String packageName =
+                        packageName(directory);
+
+                if (!packageName.isEmpty()) {
+                    modulePackages.add(packageName);
+                }
+            }
+
+            return true;
+        });
+
+        if (modulePackages.isEmpty()) {
+            return "";
+        }
+
+        return findCommonPackage(modulePackages);
+    }
+    @NotNull
+    private String findCommonPackage(
+            @NotNull List<String> packages) {
+
+        if (packages.isEmpty()) {
+            return "";
+        }
+
+        String[] common =
+                packages.get(0).split("\\.");
+
+        int commonLength =
+                common.length;
+
+        for (int i = 1; i < packages.size(); i++) {
+
+            String[] current =
+                    packages.get(i).split("\\.");
+
+            commonLength =
+                    Math.min(
+                            commonLength,
+                            current.length
+                    );
+
+            for (int j = 0; j < commonLength; j++) {
+
+                if (!common[j].equals(current[j])) {
+                    commonLength = j;
+                    break;
+                }
+            }
+        }
+
+        if (commonLength == 0) {
+            return "";
+        }
+
+        return String.join(
+                ".",
+                java.util.Arrays.copyOf(
+                        common,
+                        commonLength
+                )
+        );
     }
 
     @NotNull

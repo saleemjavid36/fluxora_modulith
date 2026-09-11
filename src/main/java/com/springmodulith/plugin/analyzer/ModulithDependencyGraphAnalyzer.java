@@ -3,15 +3,12 @@ package com.springmodulith.plugin.analyzer;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.roots.ProjectRootManager;
-import com.intellij.psi.PsiFile;
-import com.intellij.psi.PsiJavaCodeReferenceElement;
-import com.intellij.psi.PsiJavaFile;
-import com.intellij.psi.PsiManager;
-import com.intellij.psi.PsiRecursiveElementVisitor;
+import com.intellij.psi.*;
 import com.springmodulith.plugin.model.ModulithDependencyGraph;
 import com.springmodulith.plugin.model.ModulithModule;
 import com.springmodulith.plugin.resolver.ModulithModuleResolver;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -49,12 +46,6 @@ public final class ModulithDependencyGraphAnalyzer {
         Set<ModulithDependencyGraph.ModuleDependency> dependencies =
                 new LinkedHashSet<>();
 
-        ModulithDependencyAnalyzer analyzer =
-                new ModulithDependencyAnalyzer(
-                        resolver,
-                        project
-                );
-
         fileIndex.iterateContent(virtualFile -> {
 
             if (!fileIndex.isInSourceContent(virtualFile)) {
@@ -75,7 +66,7 @@ public final class ModulithDependencyGraphAnalyzer {
 
             analyzeFile(
                     javaFile,
-                    analyzer,
+                    modules,
                     dependencies
             );
 
@@ -90,8 +81,21 @@ public final class ModulithDependencyGraphAnalyzer {
 
     private void analyzeFile(
             @NotNull PsiJavaFile javaFile,
-            @NotNull ModulithDependencyAnalyzer analyzer,
+            @NotNull List<ModulithModule> modules,
             @NotNull Set<ModulithDependencyGraph.ModuleDependency> dependencies) {
+
+        String sourcePackage =
+                javaFile.getPackageName();
+
+        ModulithModule source =
+                findModule(
+                        modules,
+                        sourcePackage
+                );
+
+        if (source == null) {
+            return;
+        }
 
         javaFile.accept(
                 new PsiRecursiveElementVisitor() {
@@ -102,15 +106,45 @@ public final class ModulithDependencyGraphAnalyzer {
 
                         if (element instanceof PsiJavaCodeReferenceElement reference) {
 
-                            ModulithDependencyAnalyzer.Dependency dependency =
-                                    analyzer.analyze(reference);
+                            PsiElement resolved =
+                                    reference.resolve();
 
-                            if (dependency != null) {
+                            if (!(resolved instanceof com.intellij.psi.PsiClass targetClass)) {
+                                super.visitElement(element);
+                                return;
+                            }
+
+                            PsiFile targetFile =
+                                    targetClass.getContainingFile();
+
+                            if (!(targetFile instanceof PsiJavaFile targetJavaFile)) {
+                                super.visitElement(element);
+                                return;
+                            }
+
+                            if (targetFile.getVirtualFile() == null
+                                    || !fileIndex.isInSourceContent(
+                                    targetFile.getVirtualFile())) {
+                                super.visitElement(element);
+                                return;
+                            }
+
+                            String targetPackage =
+                                    targetJavaFile.getPackageName();
+
+                            ModulithModule target =
+                                    findModule(
+                                            modules,
+                                            targetPackage
+                                    );
+
+                            if (target != null
+                                    && source != target) {
 
                                 dependencies.add(
                                         new ModulithDependencyGraph.ModuleDependency(
-                                                dependency.source().getPackageName(),
-                                                dependency.target().getPackageName()
+                                                source.getPackageName(),
+                                                target.getPackageName()
                                         )
                                 );
                             }
@@ -120,5 +154,28 @@ public final class ModulithDependencyGraphAnalyzer {
                     }
                 }
         );
+    }
+    @Nullable
+    private ModulithModule findModule(
+            @NotNull List<ModulithModule> modules,
+            @NotNull String packageName) {
+
+        ModulithModule bestMatch = null;
+
+        for (ModulithModule module : modules) {
+
+            if (!module.containsPackage(packageName)) {
+                continue;
+            }
+
+            if (bestMatch == null
+                    || module.getPackageName().length()
+                    > bestMatch.getPackageName().length()) {
+
+                bestMatch = module;
+            }
+        }
+
+        return bestMatch;
     }
 }

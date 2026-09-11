@@ -10,6 +10,7 @@ import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.ide.highlighter.JavaFileType;
 import com.springmodulith.plugin.resolver.ModulithModuleResolver;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public final class AddAllowedDependencyFix implements LocalQuickFix {
 
@@ -44,38 +45,59 @@ public final class AddAllowedDependencyFix implements LocalQuickFix {
             @NotNull Project project,
             @NotNull ProblemDescriptor descriptor) {
 
-        PsiElement element = descriptor.getPsiElement();
+        PsiDirectory moduleDirectory =
+                findPackageDirectory(project, sourceModulePackage);
 
-        if (element == null) {
+        if (moduleDirectory == null) {
             return;
         }
-
-        PsiFile psiFile = element.getContainingFile();
-
-        if (!(psiFile instanceof PsiJavaFile javaFile)) {
-            return;
-        }
-
-        PsiPackageStatement packageStatement =
-                javaFile.getPackageStatement();
-
-        if (packageStatement == null) {
-            return;
-        }
-
-        PsiAnnotation applicationModule =
-                findApplicationModule(javaFile);
 
         WriteCommandAction
                 .writeCommandAction(project)
                 .withName("Allow Modulith dependency")
                 .run(() -> {
-                    if (applicationModule != null) {
+
+                    PsiJavaFile packageInfo =
+                            findPackageInfo(moduleDirectory);
+
+                    if (packageInfo == null) {
+                        PsiElementFactory factory =
+                                PsiElementFactory.getInstance(project);
+
+                        createPackageInfo(
+                                project,
+                                moduleDirectory,
+                                factory
+                        );
+
+                        packageInfo =
+                                findPackageInfo(moduleDirectory);
+
+                        if (packageInfo == null) {
+                            return;
+                        }
+                    }
+
+                    PsiAnnotation applicationModule =
+                            findApplicationModule(packageInfo);
+
+                    if (applicationModule != null
+                            && applicationModule.isValid()) {
+
                         addDependencyToAnnotation(
                                 project,
                                 applicationModule
                         );
+
                     } else {
+
+                        PsiPackageStatement packageStatement =
+                                packageInfo.getPackageStatement();
+
+                        if (packageStatement == null) {
+                            return;
+                        }
+
                         addApplicationModuleAnnotation(
                                 project,
                                 packageStatement
@@ -241,10 +263,10 @@ public final class AddAllowedDependencyFix implements LocalQuickFix {
     }
 
 
-    private static PsiJavaFile findPackageInfo(
+    private static @Nullable PsiJavaFile findPackageInfo(
             @NotNull PsiDirectory directory) {
 
-        PsiElement file = directory.findFile("package-info.java");
+        PsiFile file = directory.findFile("package-info.java");
 
         if (file instanceof PsiJavaFile) {
             return (PsiJavaFile) file;
@@ -279,7 +301,7 @@ public final class AddAllowedDependencyFix implements LocalQuickFix {
         directory.add(packageInfo);
     }
 
-    private static PsiAnnotation findApplicationModule(
+    private static @Nullable PsiAnnotation findApplicationModule(
             @NotNull PsiJavaFile javaFile) {
 
         PsiPackageStatement packageStatement =
@@ -289,30 +311,31 @@ public final class AddAllowedDependencyFix implements LocalQuickFix {
             return null;
         }
 
+        PsiModifierList annotationList =
+                packageStatement.getAnnotationList();
+
+        if (annotationList == null) {
+            return null;
+        }
+
         for (PsiAnnotation annotation :
-                packageStatement.getAnnotationList()
-                        .getAnnotations()) {
+                annotationList.getAnnotations()) {
 
-            PsiJavaCodeReferenceElement reference =
-                    annotation.getNameReferenceElement();
-
-            if (reference == null) {
-                continue;
-            }
-
-            String qualifiedName =
-                    reference.getQualifiedName();
-
-            if ("org.springframework.modulith.ApplicationModule"
-                    .equals(qualifiedName)
-                    || "org.springframework.modulith.ApplicationModule"
-                    .equals(reference.getReferenceName())) {
-
+            if (isApplicationModule(annotation)) {
                 return annotation;
             }
         }
 
         return null;
+    }
+    private static boolean isApplicationModule(
+            @NotNull PsiAnnotation annotation) {
+
+        String qualifiedName = annotation.getQualifiedName();
+
+        return "ApplicationModule".equals(qualifiedName)
+                || "org.springframework.modulith.ApplicationModule"
+                .equals(qualifiedName);
     }
 
     private void addApplicationModuleAnnotation(
