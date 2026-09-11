@@ -5,7 +5,6 @@ import org.jetbrains.annotations.NotNull;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -72,25 +71,11 @@ public final class ModulithDependencyGraph {
     @NotNull
     private Set<ModuleDependency> findCycleEdges() {
         Set<ModuleDependency> result = new LinkedHashSet<>();
-        Map<String, Set<String>> adjacency = new HashMap<>();
-
-        for (ModulithModule module : modules) {
-            if (!module.isOpen()) {
-                adjacency.put(module.getPackageName(), new LinkedHashSet<>());
-            }
-        }
+        Map<String, Set<String>> adjacency = buildClosedModuleAdjacency();
+        Set<Set<String>> stronglyConnectedComponents = findStronglyConnectedComponents(adjacency);
 
         for (ModuleDependency dependency : dependencies) {
-            if (adjacency.containsKey(dependency.sourcePackage())
-                    && adjacency.containsKey(dependency.targetPackage())) {
-                adjacency.get(dependency.sourcePackage()).add(dependency.targetPackage());
-            }
-        }
-
-        for (ModuleDependency dependency : dependencies) {
-            if (adjacency.containsKey(dependency.sourcePackage())
-                    && adjacency.containsKey(dependency.targetPackage())
-                    && reachable(dependency.targetPackage(), dependency.sourcePackage(), adjacency, new HashSet<>())) {
+            if (isInCyclicComponent(dependency.sourcePackage(), dependency.targetPackage(), stronglyConnectedComponents)) {
                 result.add(dependency);
             }
         }
@@ -99,6 +84,17 @@ public final class ModulithDependencyGraph {
 
     @NotNull
     public Set<Set<String>> getCycles() {
+        Set<Set<String>> cycles = new LinkedHashSet<>();
+        for (Set<String> component : findStronglyConnectedComponents(buildClosedModuleAdjacency())) {
+            if (component.size() > 1) {
+                cycles.add(new LinkedHashSet<>(component));
+            }
+        }
+        return Collections.unmodifiableSet(cycles);
+    }
+
+    @NotNull
+    private Map<String, Set<String>> buildClosedModuleAdjacency() {
         Map<String, Set<String>> adjacency = new HashMap<>();
         for (ModulithModule module : modules) {
             if (!module.isOpen()) {
@@ -112,48 +108,82 @@ public final class ModulithDependencyGraph {
                 adjacency.get(dependency.sourcePackage()).add(dependency.targetPackage());
             }
         }
-
-        Set<Set<String>> cycles = new LinkedHashSet<>();
-        for (String start : adjacency.keySet()) {
-            findCycle(start, start, adjacency, new LinkedHashSet<>(), cycles);
-        }
-        return Collections.unmodifiableSet(cycles);
+        return adjacency;
     }
 
-    private boolean reachable(
-            @NotNull String current,
+    private boolean isInCyclicComponent(
+            @NotNull String source,
             @NotNull String target,
-            @NotNull Map<String, Set<String>> adjacency,
-            @NotNull Set<String> visited) {
-        if (current.equals(target)) {
-            return true;
-        }
-        if (!visited.add(current)) {
-            return false;
-        }
-        for (String next : adjacency.getOrDefault(current, Set.of())) {
-            if (reachable(next, target, adjacency, visited)) {
+            @NotNull Set<Set<String>> components) {
+        for (Set<String> component : components) {
+            if (component.size() > 1 && component.contains(source) && component.contains(target)) {
                 return true;
             }
         }
         return false;
     }
 
-    private void findCycle(
-            @NotNull String start,
-            @NotNull String current,
-            @NotNull Map<String, Set<String>> adjacency,
-            @NotNull LinkedHashSet<String> path,
-            @NotNull Set<Set<String>> cycles) {
-        path.add(current);
-        for (String target : adjacency.getOrDefault(current, Set.of())) {
-            if (target.equals(start) && path.size() > 1) {
-                cycles.add(new LinkedHashSet<>(path));
-            } else if (!path.contains(target)) {
-                findCycle(start, target, adjacency, path, cycles);
+    @NotNull
+    private Set<Set<String>> findStronglyConnectedComponents(
+            @NotNull Map<String, Set<String>> adjacency) {
+        Map<String, Integer> indexes = new HashMap<>();
+        Map<String, Integer> lowLinks = new HashMap<>();
+        LinkedHashSet<String> stack = new LinkedHashSet<>();
+        Set<Set<String>> components = new LinkedHashSet<>();
+        int[] index = {0};
+
+        for (String node : adjacency.keySet()) {
+            if (!indexes.containsKey(node)) {
+                strongConnect(node, adjacency, indexes, lowLinks, stack, components, index);
             }
         }
-        path.remove(current);
+        return components;
+    }
+
+    private void strongConnect(
+            @NotNull String node,
+            @NotNull Map<String, Set<String>> adjacency,
+            @NotNull Map<String, Integer> indexes,
+            @NotNull Map<String, Integer> lowLinks,
+            @NotNull LinkedHashSet<String> stack,
+            @NotNull Set<Set<String>> components,
+            int[] index) {
+        indexes.put(node, index[0]);
+        lowLinks.put(node, index[0]);
+        index[0]++;
+        stack.add(node);
+
+        for (String next : adjacency.getOrDefault(node, Set.of())) {
+            if (!indexes.containsKey(next)) {
+                strongConnect(next, adjacency, indexes, lowLinks, stack, components, index);
+                lowLinks.put(node, Math.min(lowLinks.get(node), lowLinks.get(next)));
+            } else if (stack.contains(next)) {
+                lowLinks.put(node, Math.min(lowLinks.get(node), indexes.get(next)));
+            }
+        }
+
+        if (lowLinks.get(node).equals(indexes.get(node))) {
+            Set<String> component = new LinkedHashSet<>();
+            String current;
+            do {
+                current = removeLast(stack);
+                component.add(current);
+            } while (!node.equals(current));
+            components.add(component);
+        }
+    }
+
+    @NotNull
+    private String removeLast(@NotNull LinkedHashSet<String> values) {
+        String last = null;
+        for (String value : values) {
+            last = value;
+        }
+        if (last == null) {
+            throw new IllegalStateException("Cycle analysis stack is empty");
+        }
+        values.remove(last);
+        return last;
     }
 
     public enum EdgeKind {
@@ -210,7 +240,9 @@ public final class ModulithDependencyGraph {
             this.apiViolation = apiViolation;
             this.namedInterface = namedInterface;
             this.references = new ArrayList<>(references);
-            this.referenceCount = Math.max(1, referenceCount);
+            this.referenceCount = references.isEmpty()
+                    ? Math.max(1, referenceCount)
+                    : references.size();
         }
 
         @NotNull

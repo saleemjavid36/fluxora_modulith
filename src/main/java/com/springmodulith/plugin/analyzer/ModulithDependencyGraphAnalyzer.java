@@ -1,201 +1,114 @@
 package com.springmodulith.plugin.analyzer;
 
-import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.roots.ProjectFileIndex;
-import com.intellij.openapi.roots.ProjectRootManager;
-import com.intellij.psi.PsiClass;
-import com.intellij.psi.PsiElement;
-import com.intellij.psi.PsiFile;
-import com.intellij.psi.PsiJavaCodeReferenceElement;
-import com.intellij.psi.PsiJavaFile;
-import com.intellij.psi.PsiRecursiveElementVisitor;
-import com.intellij.psi.PsiManager;
-import com.intellij.psi.PsiDocumentManager;
+import com.springmodulith.plugin.model.ModulithDependencyAnalysis;
 import com.springmodulith.plugin.model.ModulithDependencyGraph;
-import com.springmodulith.plugin.model.ModulithModule;
 import com.springmodulith.plugin.model.ModulithDependencyReference;
-import com.springmodulith.plugin.model.NamedInterface;
+import com.springmodulith.plugin.model.ModulithModule;
 import com.springmodulith.plugin.resolver.ModulithModuleResolver;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Builds the graph from the same dependency analysis used by inspections.
+ */
 public final class ModulithDependencyGraphAnalyzer {
-
     private final Project project;
-    private final ProjectFileIndex fileIndex;
-    private final PsiManager psiManager;
     private final ModulithModuleResolver resolver;
 
     public ModulithDependencyGraphAnalyzer(@NotNull Project project) {
         this.project = project;
-        this.fileIndex = ProjectRootManager.getInstance(project).getFileIndex();
-        this.psiManager = PsiManager.getInstance(project);
         this.resolver = new ModulithModuleResolver(project);
     }
 
     @NotNull
     public ModulithDependencyGraph analyze() {
+        if (project.isDisposed()) {
+            return new ModulithDependencyGraph(List.of(), java.util.Set.of());
+        }
+
         List<ModulithModule> modules = resolver.resolveModules();
-        Map<String, ModulithDependencyGraph.ModuleDependency> dependencies = new LinkedHashMap<>();
+        if (modules.isEmpty()) {
+            return new ModulithDependencyGraph(modules, java.util.Set.of());
+        }
 
-        fileIndex.iterateContent(virtualFile -> {
-            if (!fileIndex.isInSourceContent(virtualFile)
-                    || fileIndex.isInTestSourceContent(virtualFile)
-                    || !"java".equalsIgnoreCase(virtualFile.getExtension())) {
-                return true;
-            }
+        ModulithDependencyAnalyzer analyzer =
+                new ModulithDependencyAnalyzer(resolver, project);
+        List<ModulithDependencyAnalysis> analyses = analyzer.analyzeProject();
 
-            PsiFile psiFile = psiManager.findFile(virtualFile);
-            if (psiFile instanceof PsiJavaFile javaFile) {
-                analyzeFile(javaFile, modules, dependencies);
-            }
-            return true;
-        });
+        Map<String, MutableDependency> aggregated = new LinkedHashMap<>();
+        for (ModulithDependencyAnalysis analysis : analyses) {
+            String key = analysis.sourcePackage() + "->" + analysis.targetPackage();
+            MutableDependency dependency = aggregated.computeIfAbsent(
+                    key,
+                    ignored -> new MutableDependency(analysis)
+            );
+            dependency.add(analysis);
+        }
 
-        return new ModulithDependencyGraph(modules, new java.util.LinkedHashSet<>(dependencies.values()));
+        LinkedHashSet<ModulithDependencyGraph.ModuleDependency> dependencies = new LinkedHashSet<>();
+        for (MutableDependency dependency : aggregated.values()) {
+            dependencies.add(dependency.toGraphDependency());
+        }
+
+        return new ModulithDependencyGraph(modules, dependencies);
     }
 
-    private void analyzeFile(
-            @NotNull PsiJavaFile javaFile,
-            @NotNull List<ModulithModule> modules,
-            @NotNull Map<String, ModulithDependencyGraph.ModuleDependency> dependencies) {
+    private static final class MutableDependency {
+        private final String sourcePackage;
+        private final String targetPackage;
+        private ModulithDependencyAnalysis.Status status;
+        private boolean apiViolation;
+        private String namedInterface;
+        private final List<ModulithDependencyReference> references = new ArrayList<>();
 
-        String sourcePackage = javaFile.getPackageName();
-        ModulithModule source = findModule(modules, sourcePackage);
-        if (source == null) return;
+        private MutableDependency(@NotNull ModulithDependencyAnalysis first) {
+            this.sourcePackage = first.sourcePackage();
+            this.targetPackage = first.targetPackage();
+            this.status = first.status();
+            this.apiViolation = first.apiViolation();
+            this.namedInterface = first.namedInterfaceName();
+            this.references.add(first.sourceReference());
+        }
 
-        javaFile.accept(new PsiRecursiveElementVisitor() {
-            @Override
-            public void visitElement(@NotNull PsiElement element) {
-                if (element instanceof PsiJavaCodeReferenceElement reference) {
-                    analyzeReference(reference, javaFile, source, modules, dependencies);
+        private void add(@NotNull ModulithDependencyAnalysis next) {
+            this.apiViolation |= next.apiViolation();
+            this.references.add(next.sourceReference());
+
+            if (next.status() == ModulithDependencyAnalysis.Status.FORBIDDEN) {
+                status = ModulithDependencyAnalysis.Status.FORBIDDEN;
+            } else if (status != ModulithDependencyAnalysis.Status.FORBIDDEN
+                    && next.status() == ModulithDependencyAnalysis.Status.NAMED_INTERFACE) {
+                status = ModulithDependencyAnalysis.Status.NAMED_INTERFACE;
+                if (namedInterface == null) {
+                    namedInterface = next.namedInterfaceName();
+                } else if (next.namedInterfaceName() != null
+                        && !namedInterface.equals(next.namedInterfaceName())) {
+                    namedInterface = null;
                 }
-                super.visitElement(element);
             }
-        });
-    }
-
-    private void analyzeReference(
-            @NotNull PsiJavaCodeReferenceElement reference,
-            @NotNull PsiJavaFile sourceFile,
-            @NotNull ModulithModule source,
-            @NotNull List<ModulithModule> modules,
-            @NotNull Map<String, ModulithDependencyGraph.ModuleDependency> dependencies) {
-
-        PsiElement resolved = reference.resolve();
-        if (!(resolved instanceof PsiClass targetClass)) return;
-
-        PsiFile targetFile = targetClass.getContainingFile();
-        if (!(targetFile instanceof PsiJavaFile targetJavaFile)
-                || targetFile.getVirtualFile() == null
-                || !fileIndex.isInSourceContent(targetFile.getVirtualFile())
-                || fileIndex.isInTestSourceContent(targetFile.getVirtualFile())) {
-            return;
         }
 
-        String targetPackage = targetJavaFile.getPackageName();
-        ModulithModule target = findModule(modules, targetPackage);
-        if (target == null || source.getPackageName().equals(target.getPackageName())) return;
-
-        String qualifiedType = targetClass.getQualifiedName();
-        if (qualifiedType == null) return;
-
-        boolean allowed = !source.isAllowedDependenciesConfigured()
-                || source.allowsType(qualifiedType, targetPackage, target);
-
-        boolean apiViolation = !target.exposes(qualifiedType, targetPackage);
-        NamedInterface namedInterface =
-                source.findAllowedNamedInterface(
-                        qualifiedType,
-                        targetPackage,
-                        target
-                );
-
-        ModulithDependencyGraph.EdgeKind kind;
-        if (namedInterface != null) {
-            kind = ModulithDependencyGraph.EdgeKind.NAMED_INTERFACE;
-        } else if (allowed && !apiViolation) {
-            kind = ModulithDependencyGraph.EdgeKind.ALLOWED;
-        } else {
-            kind = ModulithDependencyGraph.EdgeKind.FORBIDDEN;
-        }
-
-        ModulithDependencyReference dependencyReference = createDependencyReference(reference, sourceFile);
-        if (dependencyReference == null) return;
-
-        String key = source.getPackageName() + "->" + target.getPackageName();
-        ModulithDependencyGraph.ModuleDependency existing = dependencies.get(key);
-
-        if (existing == null) {
-            ModulithDependencyGraph.ModuleDependency created =
-                    new ModulithDependencyGraph.ModuleDependency(
-                            source.getPackageName(),
-                            target.getPackageName(),
-                            kind,
-                            apiViolation,
-                            namedInterface == null ? null : namedInterface.getName()
-                    );
-            created.addReference(dependencyReference);
-            dependencies.put(key, created);
-            return;
-        }
-
-        existing.incrementReferenceCount();
-        existing.addReference(dependencyReference);
-
-        if (existing.kind() != ModulithDependencyGraph.EdgeKind.FORBIDDEN
-                && kind == ModulithDependencyGraph.EdgeKind.FORBIDDEN) {
-            dependencies.put(key, new ModulithDependencyGraph.ModuleDependency(
-                    existing.sourcePackage(),
-                    existing.targetPackage(),
+        private ModulithDependencyGraph.ModuleDependency toGraphDependency() {
+            ModulithDependencyGraph.EdgeKind kind = switch (status) {
+                case FORBIDDEN -> ModulithDependencyGraph.EdgeKind.FORBIDDEN;
+                case NAMED_INTERFACE -> ModulithDependencyGraph.EdgeKind.NAMED_INTERFACE;
+                case ALLOWED -> ModulithDependencyGraph.EdgeKind.ALLOWED;
+            };
+            return new ModulithDependencyGraph.ModuleDependency(
+                    sourcePackage,
+                    targetPackage,
                     kind,
-                    existing.isApiViolation() || apiViolation,
-                    namedInterface == null ? existing.namedInterface() : namedInterface.getName(),
-                    existing.referenceCount(),
-                    existing.references()
-            ));
+                    apiViolation,
+                    namedInterface,
+                    references.size(),
+                    references
+            );
         }
-    }
-
-    @Nullable
-    private ModulithDependencyReference createDependencyReference(
-            @NotNull PsiJavaCodeReferenceElement reference,
-            @NotNull PsiJavaFile sourceFile) {
-
-        if (sourceFile.getVirtualFile() == null) return null;
-
-        int offset = reference.getTextOffset();
-        int lineNumber = 1;
-        Document document = PsiDocumentManager.getInstance(project).getDocument(sourceFile);
-        if (document != null) {
-            lineNumber = document.getLineNumber(Math.min(offset, document.getTextLength())) + 1;
-        }
-
-        return new ModulithDependencyReference(
-                sourceFile.getVirtualFile(),
-                offset,
-                lineNumber,
-                sourceFile.getName() + ":" + lineNumber
-        );
-    }
-
-    @Nullable
-    private ModulithModule findModule(
-            @NotNull List<ModulithModule> modules,
-            @NotNull String packageName) {
-        ModulithModule bestMatch = null;
-        for (ModulithModule module : modules) {
-            if (!module.containsPackage(packageName)) continue;
-            if (bestMatch == null || module.getPackageName().length() > bestMatch.getPackageName().length()) {
-                bestMatch = module;
-            }
-        }
-        return bestMatch;
     }
 }

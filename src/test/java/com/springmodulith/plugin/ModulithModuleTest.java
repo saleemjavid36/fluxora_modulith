@@ -191,6 +191,67 @@ class ModulithModuleTest {
         );
     }
 
+
+    @Test
+    void dependencyRuleParsesModuleOnly() {
+        ModulithModule.DependencyRule rule =
+                ModulithModule.DependencyRule.parse(" user ");
+
+        assertNotNull(rule);
+        assertEquals("user", rule.moduleId());
+        assertNull(rule.interfaceId());
+    }
+
+    @Test
+    void dependencyRuleParsesQualifiedNamedInterface() {
+        ModulithModule.DependencyRule rule =
+                ModulithModule.DependencyRule.parse(" com.example.user :: api ");
+
+        assertNotNull(rule);
+        assertEquals("com.example.user", rule.moduleId());
+        assertEquals("api", rule.interfaceId());
+    }
+
+    @Test
+    void dependencyRuleRejectsMalformedValues() {
+        assertNull(ModulithModule.DependencyRule.parse(""));
+        assertNull(ModulithModule.DependencyRule.parse("user ::"));
+        assertNull(ModulithModule.DependencyRule.parse(":: api"));
+        assertNull(ModulithModule.DependencyRule.parse("user :: api :: extra"));
+    }
+
+    @Test
+    void wildcardNamedInterfaceRuleAllowsWholeTargetModule() {
+        ModulithModule account = module("account", "com.example.account", false, true, Set.of("user :: *"));
+        ModulithModule user = module("user", "com.example.user", false, false, Set.of());
+
+        assertTrue(account.allowsType(
+                "com.example.user.internal.UserRepository",
+                "com.example.user.internal",
+                user
+        ));
+    }
+
+    @Test
+    void namedInterfacePackageRuleAllowsNestedPackage() {
+        ModulithModule account = module("account", "com.example.account", false, true, Set.of("user :: api"));
+        ModulithModule user = new ModulithModule(
+                "user", "com.example.user", false, false, Set.of(),
+                List.of(new NamedInterface("api", "com.example.user.api", Set.of()))
+        );
+
+        assertTrue(account.allowsType(
+                "com.example.user.api.v1.UserApi",
+                "com.example.user.api.v1",
+                user
+        ));
+        assertFalse(account.allowsType(
+                "com.example.user.apix.UserApi",
+                "com.example.user.apix",
+                user
+        ));
+    }
+
     private ModulithModule module(String name, String pkg, boolean open, boolean configured, Set<String> deps) {
         return new ModulithModule(name, pkg, open, configured, deps, List.of());
     }

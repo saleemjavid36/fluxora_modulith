@@ -27,6 +27,7 @@ dependencies {
         bundledPlugin("com.intellij.java")
 
         testFramework(TestFrameworkType.JUnit5)
+        testFramework(TestFrameworkType.Plugin.Java)
     }
 }
 

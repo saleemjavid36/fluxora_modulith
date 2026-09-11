@@ -46,6 +46,10 @@ public final class ModulithModuleResolver {
         if (!rootPackage.isEmpty()) {
             List<PsiDirectory> roots = findDirectoriesForPackage(rootPackage);
             for (PsiDirectory rootDirectory : roots) {
+                if (hasApplicationModule(rootDirectory) && containsJavaSource(rootDirectory)) {
+                    result.add(toModule(rootDirectory, rootPackage));
+                }
+
                 if (ModulithSettings.EXPLICITLY_ANNOTATED.equals(strategy)) {
                     collectExplicitModules(rootDirectory, rootPackage, result);
                 } else {
@@ -55,9 +59,10 @@ public final class ModulithModuleResolver {
             }
         }
 
-        // If the root was configured incorrectly or cannot be inferred,
-        // still discover explicitly annotated modules from source roots.
-        if (result.isEmpty() && ModulithSettings.EXPLICITLY_ANNOTATED.equals(strategy)) {
+        // Explicit @ApplicationModule declarations are authoritative even
+        // when the inferred/configured root is missing or the selected
+        // discovery strategy cannot find a module from that root.
+        if (result.isEmpty()) {
             collectAllExplicitModules(result);
         }
 
@@ -224,7 +229,7 @@ public final class ModulithModuleResolver {
     private void collectNamedInterfaces(@NotNull PsiDirectory directory, @NotNull String modulePackage,
                                         @NotNull List<NamedInterface> result, @NotNull Set<String> visited) {
         String pkg = packageName(directory);
-        if (!pkg.startsWith(modulePackage)) return;
+        if (!pkg.equals(modulePackage) && !pkg.startsWith(modulePackage + ".")) return;
         PsiAnnotation packageAnnotation = findPackageAnnotation(directory, NAMED_INTERFACE);
         if (packageAnnotation != null) {
             for (String name : readNamedInterfaceNames(packageAnnotation, pkg.substring(modulePackage.length() + (pkg.equals(modulePackage) ? 0 : 1)))) {

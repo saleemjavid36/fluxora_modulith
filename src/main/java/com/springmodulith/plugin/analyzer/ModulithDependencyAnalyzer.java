@@ -1,5 +1,6 @@
 package com.springmodulith.plugin.analyzer;
 
+import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.roots.ProjectRootManager;
@@ -8,126 +9,251 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiJavaCodeReferenceElement;
 import com.intellij.psi.PsiJavaFile;
+import com.intellij.psi.PsiRecursiveElementVisitor;
+import com.intellij.psi.PsiDocumentManager;
+import com.springmodulith.plugin.model.ModulithDependencyAnalysis;
+import com.springmodulith.plugin.model.ModulithDependencyReference;
 import com.springmodulith.plugin.model.ModulithModule;
 import com.springmodulith.plugin.model.NamedInterface;
 import com.springmodulith.plugin.resolver.ModulithModuleResolver;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Central dependency analyzer used by inspections and the module graph.
+ * All consumers use the same dependency classification and module rules.
+ */
 public final class ModulithDependencyAnalyzer {
+    private final Project project;
     private final ModulithModuleResolver resolver;
     private final ProjectFileIndex fileIndex;
+    private final PsiDocumentManager documentManager;
+    private final Map<String, List<ModulithModule>> modulesByContextPackage = new HashMap<>();
 
     public ModulithDependencyAnalyzer(
             @NotNull ModulithModuleResolver resolver,
             @NotNull Project project) {
+        this.project = project;
         this.resolver = resolver;
         this.fileIndex = ProjectRootManager.getInstance(project).getFileIndex();
-    }
-
-    public boolean isViolation(@NotNull PsiJavaCodeReferenceElement reference) {
-        Dependency dependency = analyze(reference);
-
-        if (dependency == null) {
-            return false;
-        }
-
-        String qualifiedType = dependency.targetClass().getQualifiedName();
-
-        if (qualifiedType == null) {
-            return false;
-        }
-
-        String targetPackage = getPackageName(dependency.targetClass());
-
-        if (targetPackage.isEmpty()) {
-            return false;
-        }
-
-        /*
-         * A cross-module reference is a dependency even when the
-         * source module does not declare allowedDependencies yet.
-         * In that case the inspection reports the dependency and the
-         * quick-fix can add the explicit rule.
-         *
-         * Once allowedDependencies is explicitly configured, the
-         * configured rule decides whether the dependency is allowed.
-         */
-        if (!dependency.source().isAllowedDependenciesConfigured()) {
-            return true;
-        }
-
-        return !dependency.source().allowsType(
-                qualifiedType,
-                targetPackage,
-                dependency.target()
-        );
+        this.documentManager = PsiDocumentManager.getInstance(project);
     }
 
     @Nullable
-    public String getMessage(
+    public ModulithDependencyAnalysis analyze(
             @NotNull PsiJavaCodeReferenceElement reference) {
+        return analyze(reference, getModules(reference.getContainingFile()));
+    }
 
-        Dependency dependency = analyze(reference);
+    @NotNull
+    public List<ModulithDependencyAnalysis> analyzeProject() {
+        if (project.isDisposed()) {
+            return List.of();
+        }
 
-        if (dependency == null) {
+        List<ModulithModule> modules = getModules(null);
+        if (modules.isEmpty()) {
+            return List.of();
+        }
+
+        List<ModulithDependencyAnalysis> result = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+
+        fileIndex.iterateContent(virtualFile -> {
+            if (project.isDisposed()
+                    || !fileIndex.isInSourceContent(virtualFile)
+                    || fileIndex.isInTestSourceContent(virtualFile)
+                    || !"java".equalsIgnoreCase(virtualFile.getExtension())) {
+                return !project.isDisposed();
+            }
+
+            PsiFile psiFile = com.intellij.psi.PsiManager.getInstance(project).findFile(virtualFile);
+            if (!(psiFile instanceof PsiJavaFile javaFile)) {
+                return true;
+            }
+
+            String sourcePackage = javaFile.getPackageName();
+            ModulithModule source = findModule(modules, sourcePackage);
+            if (source == null) {
+                return true;
+            }
+
+            javaFile.accept(new PsiRecursiveElementVisitor() {
+                @Override
+                public void visitElement(@NotNull PsiElement element) {
+                    if (element instanceof PsiJavaCodeReferenceElement reference) {
+                        ModulithDependencyAnalysis analysis =
+                                analyze(reference, modules);
+                        if (analysis != null) {
+                            String key = referenceKey(analysis);
+                            if (seen.add(key)) {
+                                result.add(analysis);
+                            }
+                        }
+                    }
+                    super.visitElement(element);
+                }
+            });
+
+            return true;
+        });
+
+        return Collections.unmodifiableList(result);
+    }
+
+    @NotNull
+    private List<ModulithModule> getModules(@Nullable PsiFile contextFile) {
+        if (contextFile == null) {
+            return resolver.resolveModules();
+        }
+
+        String contextPackage = contextFile instanceof PsiJavaFile javaFile
+                ? javaFile.getPackageName()
+                : contextFile.getName();
+
+        return modulesByContextPackage.computeIfAbsent(
+                contextPackage,
+                ignored -> List.copyOf(resolver.resolveModules(contextFile))
+        );
+    }
+
+    private String referenceKey(@NotNull ModulithDependencyAnalysis analysis) {
+        PsiFile file = analysis.reference().getContainingFile();
+        String path = file.getVirtualFile() == null
+                ? file.getName()
+                : file.getVirtualFile().getPath();
+        return path + "@" + analysis.reference().getTextOffset()
+                + "->" + analysis.targetPackage()
+                + "::" + analysis.targetClass().getQualifiedName();
+    }
+
+    @Nullable
+    private ModulithDependencyAnalysis analyze(
+            @NotNull PsiJavaCodeReferenceElement reference,
+            @NotNull List<ModulithModule> modules) {
+
+        PsiElement resolved = reference.resolve();
+        if (!(resolved instanceof PsiClass targetClass)) {
             return null;
         }
 
-        String qualifiedType =
-                dependency.targetClass().getQualifiedName();
+        PsiJavaFile sourceFile = containingJavaFile(reference);
+        PsiJavaFile targetFile = containingJavaFile(targetClass);
 
-        if (qualifiedType == null) {
+        if (sourceFile == null || targetFile == null
+                || !isProjectSource(sourceFile)
+                || !isProjectSource(targetFile)) {
             return null;
         }
 
-        String targetPackage =
-                getPackageName(dependency.targetClass());
-
-        if (targetPackage.isEmpty()) {
+        String sourcePackage = sourceFile.getPackageName();
+        String targetPackage = targetFile.getPackageName();
+        if (sourcePackage.isEmpty() || targetPackage.isEmpty()) {
             return null;
         }
 
-        ModulithModule source = dependency.source();
-        ModulithModule target = dependency.target();
+        ModulithModule source = findModule(modules, sourcePackage);
+        ModulithModule target = findModule(modules, targetPackage);
+        if (source == null || target == null
+                || source.getPackageName().equals(target.getPackageName())) {
+            return null;
+        }
 
-        /*
-         * No explicit allowedDependencies means the dependency is
-         * currently implicit rather than forbidden.
-         */
-        if (!source.isAllowedDependenciesConfigured()) {
+        String qualifiedType = targetClass.getQualifiedName();
+        if (qualifiedType == null || qualifiedType.isEmpty()) {
+            return null;
+        }
+
+        boolean allowed = !source.isAllowedDependenciesConfigured()
+                || source.allowsType(qualifiedType, targetPackage, target);
+        boolean apiViolation = !target.exposes(qualifiedType, targetPackage);
+
+        NamedInterface namedInterface =
+                source.findAllowedNamedInterface(
+                        qualifiedType,
+                        targetPackage,
+                        target
+                );
+
+        ModulithDependencyAnalysis.Status status;
+        if (apiViolation || !allowed) {
+            status = ModulithDependencyAnalysis.Status.FORBIDDEN;
+        } else if (namedInterface != null) {
+            status = ModulithDependencyAnalysis.Status.NAMED_INTERFACE;
+        } else {
+            status = ModulithDependencyAnalysis.Status.ALLOWED;
+        }
+
+        ModulithDependencyReference sourceReference = createDependencyReference(reference);
+        if (sourceReference == null) {
+            return null;
+        }
+
+        return new ModulithDependencyAnalysis(
+                source,
+                target,
+                targetClass,
+                reference,
+                sourceReference,
+                status,
+                apiViolation,
+                namedInterface
+        );
+    }
+
+    public boolean isViolation(@NotNull PsiJavaCodeReferenceElement reference) {
+        ModulithDependencyAnalysis analysis = analyze(reference);
+        return analysis != null && analysis.isForbidden();
+    }
+
+    @Nullable
+    public String getMessage(@NotNull PsiJavaCodeReferenceElement reference) {
+        ModulithDependencyAnalysis analysis = analyze(reference);
+        return analysis == null ? null : getMessage(analysis);
+    }
+
+    @Nullable
+    public String getMessage(@NotNull ModulithDependencyAnalysis analysis) {
+        if (!analysis.source().isAllowedDependenciesConfigured()) {
+            if (analysis.apiViolation()) {
+                return "Modulith API violation: "
+                        + analysis.source().getName()
+                        + " accesses internal type "
+                        + analysis.targetClass().getQualifiedName()
+                        + " from module "
+                        + analysis.target().getName();
+            }
             return "Modulith module dependency: "
-                    + source.getName()
+                    + analysis.source().getName()
                     + " -> "
-                    + target.getName()
+                    + analysis.target().getName()
                     + " (add allowedDependencies to make the dependency explicit)";
         }
 
-        /*
-         * The complete module or an allowed named interface permits
-         * this exact reference.
-         */
-        if (source.allowsType(
-                qualifiedType,
-                targetPackage,
-                target)) {
+        if (!analysis.isForbidden()) {
             return null;
         }
 
         String dependencyName =
-                source.getName()
+                analysis.source().getName()
                         + " -> "
-                        + target.getName();
+                        + analysis.target().getName();
 
-        /*
-         * The target type belongs to a named interface, but the source
-         * module did not allow that interface.
-         */
-        NamedInterface namedInterface =
-                target.findNamedInterfaceForType(
-                        qualifiedType,
-                        targetPackage
-                );
+        String qualifiedType = analysis.targetClass().getQualifiedName();
+        NamedInterface namedInterface = qualifiedType == null
+                ? null
+                : analysis.target().findNamedInterfaceForType(
+                qualifiedType,
+                packageName(analysis.targetClass())
+        );
 
         if (namedInterface != null) {
             return "Modulith named-interface dependency is not allowed: "
@@ -136,83 +262,83 @@ public final class ModulithDependencyAnalyzer {
                     + namedInterface.getName();
         }
 
-        return "Modulith dependency is not allowed: "
-                + dependencyName;
+        if (analysis.apiViolation()) {
+            return "Modulith API violation: "
+                    + analysis.source().getName()
+                    + " accesses internal type "
+                    + analysis.targetClass().getQualifiedName()
+                    + " from module "
+                    + analysis.target().getName();
+        }
+
+        return "Modulith dependency is not allowed: " + dependencyName;
     }
 
     @Nullable
-    public Dependency analyze(@NotNull PsiJavaCodeReferenceElement reference) {
-        PsiElement resolved = reference.resolve();
-
-        if (!(resolved instanceof PsiClass targetClass)) {
+    private ModulithDependencyReference createDependencyReference(
+            @NotNull PsiJavaCodeReferenceElement reference) {
+        PsiFile sourceFile = reference.getContainingFile();
+        if (sourceFile == null || sourceFile.getVirtualFile() == null) {
             return null;
         }
 
-        PsiJavaFile sourceFile = containingJavaFile(reference);
-        PsiJavaFile targetFile = containingJavaFile(targetClass);
-
-        if (sourceFile == null || targetFile == null) {
-            return null;
+        PsiElement nameElement = reference.getReferenceNameElement();
+        int offset = Math.max(
+                0,
+                nameElement == null
+                        ? reference.getTextOffset()
+                        : nameElement.getTextOffset()
+        );
+        int lineNumber = 1;
+        Document document = documentManager.getDocument(sourceFile);
+        if (document != null) {
+            lineNumber = document.getLineNumber(
+                    Math.min(offset, document.getTextLength())
+            ) + 1;
         }
 
-        if (!isProjectSource(sourceFile) || !isProjectSource(targetFile)) {
-            return null;
-        }
-
-        String sourcePackage = sourceFile.getPackageName();
-        String targetPackage = targetFile.getPackageName();
-
-        if (sourcePackage.isEmpty() || targetPackage.isEmpty()) {
-            return null;
-        }
-
-        ModulithModule source =
-                resolver.resolveModule(sourceFile, sourcePackage);
-
-        ModulithModule target =
-                resolver.resolveModule(targetFile, targetPackage);
-
-        if (source == null || target == null) {
-            return null;
-        }
-
-        if (source.getPackageName().equals(target.getPackageName())) {
-            return null;
-        }
-
-        return new Dependency(source, target, targetClass);
+        return new ModulithDependencyReference(
+                sourceFile.getVirtualFile(),
+                offset,
+                lineNumber,
+                sourceFile.getName() + ":" + lineNumber
+        );
     }
 
     @NotNull
-    private String getPackageName(@NotNull PsiClass psiClass) {
+    private String packageName(@NotNull PsiClass psiClass) {
         PsiFile containingFile = psiClass.getContainingFile();
-
-        if (!(containingFile instanceof PsiJavaFile javaFile)) {
-            return "";
-        }
-
-        return javaFile.getPackageName();
+        return containingFile instanceof PsiJavaFile javaFile
+                ? javaFile.getPackageName()
+                : "";
     }
 
     private boolean isProjectSource(@NotNull PsiFile file) {
         return file.getVirtualFile() != null
-                && fileIndex.isInSourceContent(file.getVirtualFile());
+                && fileIndex.isInSourceContent(file.getVirtualFile())
+                && !fileIndex.isInTestSourceContent(file.getVirtualFile());
     }
 
     @Nullable
     private PsiJavaFile containingJavaFile(@NotNull PsiElement element) {
         PsiFile file = element.getContainingFile();
-
-        if (file instanceof PsiJavaFile javaFile) {
-            return javaFile;
-        }
-
-        return null;
+        return file instanceof PsiJavaFile javaFile ? javaFile : null;
     }
 
-    public record Dependency(
-            @NotNull ModulithModule source,
-            @NotNull ModulithModule target,
-            @NotNull PsiClass targetClass) {
+    @Nullable
+    private ModulithModule findModule(
+            @NotNull List<ModulithModule> modules,
+            @NotNull String packageName) {
+        ModulithModule best = null;
+        for (ModulithModule module : modules) {
+            if (!module.containsPackage(packageName)) {
+                continue;
+            }
+            if (best == null
+                    || module.getPackageName().length() > best.getPackageName().length()) {
+                best = module;
+            }
+        }
+        return best;
     }
 }

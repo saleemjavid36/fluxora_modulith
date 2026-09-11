@@ -1,16 +1,17 @@
 package com.springmodulith.plugin.inspection;
 
+import com.intellij.codeInspection.AbstractBaseJavaLocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemsHolder;
-import com.intellij.codeInspection.AbstractBaseJavaLocalInspectionTool;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.JavaElementVisitor;
+import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.PsiImportStatement;
 import com.intellij.psi.PsiJavaCodeReferenceElement;
-import com.intellij.psi.PsiClass;
 import com.springmodulith.plugin.analyzer.ModulithDependencyAnalyzer;
 import com.springmodulith.plugin.configuration.ModulithSettings;
+import com.springmodulith.plugin.model.ModulithDependencyAnalysis;
 import com.springmodulith.plugin.model.ModulithModule;
 import com.springmodulith.plugin.model.NamedInterface;
 import com.springmodulith.plugin.quickfix.AddAllowedDependencyFix;
@@ -81,14 +82,14 @@ public final class ModulithDependencyInspection
             @NotNull ModulithDependencyAnalyzer analyzer,
             @NotNull ProblemsHolder holder) {
 
-        ModulithDependencyAnalyzer.Dependency dependency =
+        ModulithDependencyAnalysis dependency =
                 analyzer.analyze(reference);
 
-        if (dependency == null) {
+        if (dependency == null || !dependency.isForbidden()) {
             return;
         }
 
-        String message = analyzer.getMessage(reference);
+        String message = analyzer.getMessage(dependency);
 
         if (message == null) {
             return;
@@ -106,7 +107,7 @@ public final class ModulithDependencyInspection
 
     @NotNull
     private static LocalQuickFix[] createQuickFixes(
-            @NotNull ModulithDependencyAnalyzer.Dependency dependency) {
+            @NotNull ModulithDependencyAnalysis dependency) {
 
         ModulithModule source = dependency.source();
         ModulithModule target = dependency.target();
@@ -127,13 +128,6 @@ public final class ModulithDependencyInspection
 
         List<LocalQuickFix> fixes = new ArrayList<>();
 
-        /*
-         * Allow the complete target module.
-         *
-         * Example:
-         *
-         * "user"
-         */
         fixes.add(
                 new AddAllowedDependencyFix(
                         target.getName(),
@@ -141,14 +135,6 @@ public final class ModulithDependencyInspection
                 )
         );
 
-        /*
-         * Allow a named interface only when the referenced
-         * type/package actually belongs to that interface.
-         *
-         * Example:
-         *
-         * "user :: api"
-         */
         for (NamedInterface namedInterface :
                 target.getNamedInterfaces()) {
 
