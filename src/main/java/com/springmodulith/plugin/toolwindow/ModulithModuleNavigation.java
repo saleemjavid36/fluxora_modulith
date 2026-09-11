@@ -1,17 +1,34 @@
 package com.springmodulith.plugin.toolwindow;
 
 import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.JavaPsiFacade;
 import com.intellij.psi.PsiDirectory;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiPackage;
+import com.springmodulith.plugin.model.ModulithDependencyReference;
 import com.springmodulith.plugin.model.ModulithModule;
 import org.jetbrains.annotations.NotNull;
 
 public final class ModulithModuleNavigation {
 
     private ModulithModuleNavigation() {
+    }
+
+    public static void openReference(
+            @NotNull Project project,
+            @NotNull ModulithDependencyReference reference) {
+
+        if (!reference.file().isValid()) {
+            return;
+        }
+
+        new OpenFileDescriptor(
+                project,
+                reference.file(),
+                reference.offset()
+        ).navigate(true);
     }
 
     public static void openPackage(

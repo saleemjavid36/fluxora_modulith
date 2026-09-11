@@ -61,6 +61,135 @@ class ModulithModuleTest {
         assertFalse(account.isAllowedDependenciesConfigured());
         assertTrue(account.allowsDependency(user));
     }
+    @Test
+    void allowedNamedInterfaceAllowsType() {
+        ModulithModule account =
+                module(
+                        "account",
+                        "com.example.account",
+                        false,
+                        true,
+                        Set.of("user :: api")
+                );
+
+        ModulithModule user =
+                new ModulithModule(
+                        "user",
+                        "com.example.user",
+                        false,
+                        false,
+                        Set.of(),
+                        List.of(
+                                new NamedInterface(
+                                        "api",
+                                        "com.example.user.api",
+                                        Set.of(
+                                                "com.example.user.api.UserApi"
+                                        )
+                                )
+                        )
+                );
+
+        assertNotNull(
+                account.findAllowedNamedInterface(
+                        "com.example.user.api.UserApi",
+                        "com.example.user.api",
+                        user
+                )
+        );
+
+        assertTrue(
+                account.allowsType(
+                        "com.example.user.api.UserApi",
+                        "com.example.user.api",
+                        user
+                )
+        );
+    }
+
+    @Test
+    void namedInterfaceDoesNotAllowInternalType() {
+        ModulithModule account =
+                module(
+                        "account",
+                        "com.example.account",
+                        false,
+                        true,
+                        Set.of("user :: api")
+                );
+
+        ModulithModule user =
+                new ModulithModule(
+                        "user",
+                        "com.example.user",
+                        false,
+                        false,
+                        Set.of(),
+                        List.of(
+                                new NamedInterface(
+                                        "api",
+                                        "com.example.user.api",
+                                        Set.of(
+                                                "com.example.user.api.UserApi"
+                                        )
+                                )
+                        )
+                );
+
+        assertNull(
+                account.findAllowedNamedInterface(
+                        "com.example.user.internal.UserRepository",
+                        "com.example.user.internal",
+                        user
+                )
+        );
+
+        assertFalse(
+                account.allowsType(
+                        "com.example.user.internal.UserRepository",
+                        "com.example.user.internal",
+                        user
+                )
+        );
+    }
+
+    @Test
+    void namedInterfaceRuleMatchesModulePackageName() {
+        ModulithModule account =
+                module(
+                        "account",
+                        "com.example.account",
+                        false,
+                        true,
+                        Set.of("com.example.user :: api")
+                );
+
+        ModulithModule user =
+                new ModulithModule(
+                        "user",
+                        "com.example.user",
+                        false,
+                        false,
+                        Set.of(),
+                        List.of(
+                                new NamedInterface(
+                                        "api",
+                                        "com.example.user.api",
+                                        Set.of(
+                                                "com.example.user.api.UserApi"
+                                        )
+                                )
+                        )
+                );
+
+        assertTrue(
+                account.allowsType(
+                        "com.example.user.api.UserApi",
+                        "com.example.user.api",
+                        user
+                )
+        );
+    }
 
     private ModulithModule module(String name, String pkg, boolean open, boolean configured, Set<String> deps) {
         return new ModulithModule(name, pkg, open, configured, deps, List.of());

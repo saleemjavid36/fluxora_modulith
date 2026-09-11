@@ -82,10 +82,13 @@ public final class ModulithToolWindowFactory
                 new ModulithDependencyGraphPanel(project);
 
         moduleDetailsPanel =
-                new ModulithModuleDetailsPanel();
+                new ModulithModuleDetailsPanel(project);
 
         graphPanel.setModuleSelectionListener(
                 moduleDetailsPanel::showModule
+        );
+        graphPanel.setDependencySelectionListener(
+                moduleDetailsPanel::showDependency
         );
 
         JBScrollPane graphScrollPane =

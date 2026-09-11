@@ -81,6 +81,13 @@ public final class ModulithModule {
             return true;
         }
 
+        if (findAllowedNamedInterface(
+                qualifiedType,
+                targetPackage,
+                target) != null) {
+            return true;
+        }
+
         for (String dependency : allowedDependencies) {
             DependencyRule rule = DependencyRule.parse(dependency);
 
@@ -88,24 +95,53 @@ public final class ModulithModule {
                 continue;
             }
 
-            if (rule.interfaceId() == null) {
-                return true;
-            }
-
-            if ("*".equals(rule.interfaceId())) {
-                return true;
-            }
-
-            NamedInterface named = target.findNamedInterface(rule.interfaceId());
-
-            if (named != null &&
-                    (named.containsType(qualifiedType)
-                            || named.containsPackage(targetPackage))) {
+            /*
+             * "user" and "user :: *" allow the complete target module.
+             */
+            if (rule.interfaceId() == null
+                    || "*".equals(rule.interfaceId())) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    @Nullable
+    public NamedInterface findAllowedNamedInterface(
+            @NotNull String qualifiedType,
+            @NotNull String targetPackage,
+            @NotNull ModulithModule target) {
+
+        if (!allowedDependenciesConfigured) {
+            return null;
+        }
+
+        for (String dependency : allowedDependencies) {
+            DependencyRule rule = DependencyRule.parse(dependency);
+
+            if (rule == null
+                    || rule.interfaceId() == null
+                    || "*".equals(rule.interfaceId())) {
+                continue;
+            }
+
+            if (!target.matches(rule.moduleId())) {
+                continue;
+            }
+
+            NamedInterface namedInterface =
+                    target.findNamedInterface(rule.interfaceId());
+
+            if (namedInterface != null
+                    && namedInterface.contains(
+                    qualifiedType,
+                    targetPackage)) {
+                return namedInterface;
+            }
+        }
+
+        return null;
     }
 
     public boolean exposes(@NotNull String qualifiedType, @NotNull String targetPackage) {

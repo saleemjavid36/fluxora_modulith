@@ -9,6 +9,7 @@ import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiJavaCodeReferenceElement;
 import com.intellij.psi.PsiJavaFile;
 import com.springmodulith.plugin.model.ModulithModule;
+import com.springmodulith.plugin.model.NamedInterface;
 import com.springmodulith.plugin.resolver.ModulithModuleResolver;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -64,46 +65,79 @@ public final class ModulithDependencyAnalyzer {
     }
 
     @Nullable
-    public String getMessage(@NotNull PsiJavaCodeReferenceElement reference) {
+    public String getMessage(
+            @NotNull PsiJavaCodeReferenceElement reference) {
+
         Dependency dependency = analyze(reference);
 
         if (dependency == null) {
             return null;
         }
 
-        String qualifiedType = dependency.targetClass().getQualifiedName();
+        String qualifiedType =
+                dependency.targetClass().getQualifiedName();
 
         if (qualifiedType == null) {
             return null;
         }
 
-        String targetPackage = getPackageName(dependency.targetClass());
+        String targetPackage =
+                getPackageName(dependency.targetClass());
 
         if (targetPackage.isEmpty()) {
             return null;
         }
 
-        boolean allowed = dependency.source().isAllowedDependenciesConfigured()
-                && dependency.source().allowsType(
-                qualifiedType,
-                targetPackage,
-                dependency.target()
-        );
+        ModulithModule source = dependency.source();
+        ModulithModule target = dependency.target();
 
-        if (allowed) {
-            return null;
-        }
-
-        String dependencyName = dependency.source().getName()
-                + " -> "
-                + dependency.target().getName();
-
-        if (!dependency.source().isAllowedDependenciesConfigured()) {
-            return "Modulith module dependency: " + dependencyName
+        /*
+         * No explicit allowedDependencies means the dependency is
+         * currently implicit rather than forbidden.
+         */
+        if (!source.isAllowedDependenciesConfigured()) {
+            return "Modulith module dependency: "
+                    + source.getName()
+                    + " -> "
+                    + target.getName()
                     + " (add allowedDependencies to make the dependency explicit)";
         }
 
-        return "Modulith dependency is not allowed: " + dependencyName;
+        /*
+         * The complete module or an allowed named interface permits
+         * this exact reference.
+         */
+        if (source.allowsType(
+                qualifiedType,
+                targetPackage,
+                target)) {
+            return null;
+        }
+
+        String dependencyName =
+                source.getName()
+                        + " -> "
+                        + target.getName();
+
+        /*
+         * The target type belongs to a named interface, but the source
+         * module did not allow that interface.
+         */
+        NamedInterface namedInterface =
+                target.findNamedInterfaceForType(
+                        qualifiedType,
+                        targetPackage
+                );
+
+        if (namedInterface != null) {
+            return "Modulith named-interface dependency is not allowed: "
+                    + dependencyName
+                    + " :: "
+                    + namedInterface.getName();
+        }
+
+        return "Modulith dependency is not allowed: "
+                + dependencyName;
     }
 
     @Nullable

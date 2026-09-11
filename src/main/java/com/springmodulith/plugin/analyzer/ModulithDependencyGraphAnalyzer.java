@@ -1,5 +1,6 @@
 package com.springmodulith.plugin.analyzer;
 
+import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.roots.ProjectRootManager;
@@ -10,8 +11,10 @@ import com.intellij.psi.PsiJavaCodeReferenceElement;
 import com.intellij.psi.PsiJavaFile;
 import com.intellij.psi.PsiRecursiveElementVisitor;
 import com.intellij.psi.PsiManager;
+import com.intellij.psi.PsiDocumentManager;
 import com.springmodulith.plugin.model.ModulithDependencyGraph;
 import com.springmodulith.plugin.model.ModulithModule;
+import com.springmodulith.plugin.model.ModulithDependencyReference;
 import com.springmodulith.plugin.model.NamedInterface;
 import com.springmodulith.plugin.resolver.ModulithModuleResolver;
 import org.jetbrains.annotations.NotNull;
@@ -107,7 +110,12 @@ public final class ModulithDependencyGraphAnalyzer {
                 || source.allowsType(qualifiedType, targetPackage, target);
 
         boolean apiViolation = !target.exposes(qualifiedType, targetPackage);
-        NamedInterface namedInterface = findAllowedNamedInterface(source, target, qualifiedType, targetPackage);
+        NamedInterface namedInterface =
+                source.findAllowedNamedInterface(
+                        qualifiedType,
+                        targetPackage,
+                        target
+                );
 
         ModulithDependencyGraph.EdgeKind kind;
         if (namedInterface != null) {
@@ -118,54 +126,63 @@ public final class ModulithDependencyGraphAnalyzer {
             kind = ModulithDependencyGraph.EdgeKind.FORBIDDEN;
         }
 
+        ModulithDependencyReference dependencyReference = createDependencyReference(reference, sourceFile);
+        if (dependencyReference == null) return;
+
         String key = source.getPackageName() + "->" + target.getPackageName();
         ModulithDependencyGraph.ModuleDependency existing = dependencies.get(key);
 
         if (existing == null) {
-            dependencies.put(key, new ModulithDependencyGraph.ModuleDependency(
-                    source.getPackageName(),
-                    target.getPackageName(),
-                    kind,
-                    apiViolation,
-                    namedInterface == null ? null : namedInterface.getName()
-            ));
+            ModulithDependencyGraph.ModuleDependency created =
+                    new ModulithDependencyGraph.ModuleDependency(
+                            source.getPackageName(),
+                            target.getPackageName(),
+                            kind,
+                            apiViolation,
+                            namedInterface == null ? null : namedInterface.getName()
+                    );
+            created.addReference(dependencyReference);
+            dependencies.put(key, created);
             return;
         }
 
         existing.incrementReferenceCount();
-        if (existing.kind() != ModulithDependencyGraph.EdgeKind.FORBIDDEN && kind == ModulithDependencyGraph.EdgeKind.FORBIDDEN) {
+        existing.addReference(dependencyReference);
+
+        if (existing.kind() != ModulithDependencyGraph.EdgeKind.FORBIDDEN
+                && kind == ModulithDependencyGraph.EdgeKind.FORBIDDEN) {
             dependencies.put(key, new ModulithDependencyGraph.ModuleDependency(
                     existing.sourcePackage(),
                     existing.targetPackage(),
                     kind,
                     existing.isApiViolation() || apiViolation,
                     namedInterface == null ? existing.namedInterface() : namedInterface.getName(),
-                    existing.referenceCount()
+                    existing.referenceCount(),
+                    existing.references()
             ));
         }
     }
 
     @Nullable
-    private NamedInterface findAllowedNamedInterface(
-            @NotNull ModulithModule source,
-            @NotNull ModulithModule target,
-            @NotNull String qualifiedType,
-            @NotNull String targetPackage) {
+    private ModulithDependencyReference createDependencyReference(
+            @NotNull PsiJavaCodeReferenceElement reference,
+            @NotNull PsiJavaFile sourceFile) {
 
-        if (!source.isAllowedDependenciesConfigured()) return null;
+        if (sourceFile.getVirtualFile() == null) return null;
 
-        for (String dependency : source.getAllowedDependencies()) {
-            ModulithModule.DependencyRule rule = ModulithModule.DependencyRule.parse(dependency);
-            if (rule == null || rule.interfaceId() == null || "*".equals(rule.interfaceId())) continue;
-            if (!target.getName().equals(rule.moduleId()) && !target.getPackageName().equals(rule.moduleId())) continue;
-
-            NamedInterface namedInterface = target.findNamedInterface(rule.interfaceId());
-            if (namedInterface != null
-                    && (namedInterface.containsType(qualifiedType) || namedInterface.containsPackage(targetPackage))) {
-                return namedInterface;
-            }
+        int offset = reference.getTextOffset();
+        int lineNumber = 1;
+        Document document = PsiDocumentManager.getInstance(project).getDocument(sourceFile);
+        if (document != null) {
+            lineNumber = document.getLineNumber(Math.min(offset, document.getTextLength())) + 1;
         }
-        return null;
+
+        return new ModulithDependencyReference(
+                sourceFile.getVirtualFile(),
+                offset,
+                lineNumber,
+                sourceFile.getName() + ":" + lineNumber
+        );
     }
 
     @Nullable

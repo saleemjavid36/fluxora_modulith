@@ -4,6 +4,7 @@ import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBList;
 import com.intellij.util.ui.JBUI;
 import com.springmodulith.plugin.model.ModulithDependencyGraph;
+import com.springmodulith.plugin.model.ModulithDependencyReference;
 import com.springmodulith.plugin.model.ModulithModule;
 import com.springmodulith.plugin.model.NamedInterface;
 import org.jetbrains.annotations.NotNull;
@@ -13,6 +14,8 @@ import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JLabel;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import javax.swing.JPanel;
 import java.awt.BorderLayout;
 import java.util.ArrayList;
@@ -24,9 +27,12 @@ public final class ModulithModuleDetailsPanel extends JPanel {
     private final JBLabel packageName = new JBLabel();
     private final JBLabel status = new JBLabel();
     private final JPanel content = new JPanel();
+    private final com.intellij.openapi.project.Project project;
     private ModulithDependencyGraph graph;
 
-    public ModulithModuleDetailsPanel() {
+    public ModulithModuleDetailsPanel(
+            @NotNull com.intellij.openapi.project.Project project) {
+        this.project = project;
         setLayout(new BorderLayout());
         setBorder(JBUI.Borders.empty(12));
 
@@ -79,6 +85,67 @@ public final class ModulithModuleDetailsPanel extends JPanel {
 
         revalidate();
         repaint();
+    }
+
+    public void showDependency(
+            @Nullable ModulithDependencyGraph.ModuleDependency dependency) {
+        if (dependency == null) {
+            clear();
+            return;
+        }
+
+        moduleName.setText(
+                dependency.sourcePackage()
+                        + " → "
+                        + dependency.targetPackage()
+        );
+        packageName.setText(
+                dependency.namedInterface() == null
+                        ? "Module dependency"
+                        : "Named interface: " + dependency.namedInterface()
+        );
+        status.setText("Status: " + edgeStatus(dependency));
+
+        content.removeAll();
+        addReferenceSection(dependency);
+
+        revalidate();
+        repaint();
+    }
+
+    private void addReferenceSection(
+            @NotNull ModulithDependencyGraph.ModuleDependency dependency) {
+        content.add(Box.createVerticalStrut(14));
+        JLabel titleLabel = new JBLabel(
+                "References (" + dependency.referenceCount() + ")"
+        );
+        titleLabel.setFont(titleLabel.getFont().deriveFont(14.0f));
+        content.add(titleLabel);
+
+        List<ModulithDependencyReference> references =
+                dependency.references();
+
+        if (references.isEmpty()) {
+            content.add(new JBLabel("No source references recorded"));
+            return;
+        }
+
+        JBList<ModulithDependencyReference> list =
+                new JBList<>(references);
+        list.setVisibleRowCount(Math.min(references.size(), 10));
+        list.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
+        list.setToolTipText("Double-click a reference to open it");
+        list.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent event) {
+                if (event.getClickCount() != 2) return;
+                int index = list.locationToIndex(event.getPoint());
+                if (index < 0) return;
+                ModulithDependencyReference reference = list.getModel().getElementAt(index);
+                ModulithModuleNavigation.openReference(project, reference);
+            }
+        });
+        content.add(list);
     }
 
     private List<String> getNamedInterfaces(@NotNull ModulithModule module) {

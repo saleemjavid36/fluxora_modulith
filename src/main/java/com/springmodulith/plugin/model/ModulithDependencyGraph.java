@@ -168,6 +168,7 @@ public final class ModulithDependencyGraph {
         private final EdgeKind kind;
         private final boolean apiViolation;
         private final String namedInterface;
+        private final List<ModulithDependencyReference> references;
         private int referenceCount;
 
         public ModuleDependency(
@@ -182,7 +183,7 @@ public final class ModulithDependencyGraph {
                 @NotNull EdgeKind kind,
                 boolean apiViolation,
                 String namedInterface) {
-            this(sourcePackage, targetPackage, kind, apiViolation, namedInterface, 1);
+            this(sourcePackage, targetPackage, kind, apiViolation, namedInterface, 1, List.of());
         }
 
         public ModuleDependency(
@@ -192,11 +193,23 @@ public final class ModulithDependencyGraph {
                 boolean apiViolation,
                 String namedInterface,
                 int referenceCount) {
+            this(sourcePackage, targetPackage, kind, apiViolation, namedInterface, referenceCount, List.of());
+        }
+
+        public ModuleDependency(
+                @NotNull String sourcePackage,
+                @NotNull String targetPackage,
+                @NotNull EdgeKind kind,
+                boolean apiViolation,
+                String namedInterface,
+                int referenceCount,
+                @NotNull List<ModulithDependencyReference> references) {
             this.sourcePackage = sourcePackage;
             this.targetPackage = targetPackage;
             this.kind = kind;
             this.apiViolation = apiViolation;
             this.namedInterface = namedInterface;
+            this.references = new ArrayList<>(references);
             this.referenceCount = Math.max(1, referenceCount);
         }
 
@@ -242,6 +255,15 @@ public final class ModulithDependencyGraph {
 
         public void incrementReferenceCount() {
             referenceCount++;
+        }
+
+        @NotNull
+        public List<ModulithDependencyReference> references() {
+            return Collections.unmodifiableList(references);
+        }
+
+        public void addReference(@NotNull ModulithDependencyReference reference) {
+            references.add(reference);
         }
 
         @Override
