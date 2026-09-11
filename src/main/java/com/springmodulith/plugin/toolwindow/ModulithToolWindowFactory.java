@@ -16,6 +16,8 @@ import com.springmodulith.plugin.analyzer.ModulithDependencyGraphAnalyzer;
 import com.springmodulith.plugin.model.ModulithDependencyGraph;
 import org.jetbrains.annotations.NotNull;
 
+import javax.swing.JSplitPane;
+
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JPanel;
@@ -77,17 +79,34 @@ public final class ModulithToolWindowFactory
         ModulithDependencyGraphPanel graphPanel =
                 new ModulithDependencyGraphPanel();
 
-        JBScrollPane scrollPane =
+        ModulithModuleDetailsPanel detailsPanel =
+                new ModulithModuleDetailsPanel();
+
+        graphPanel.setModuleSelectionListener(
+                detailsPanel::showModule
+        );
+
+        JBScrollPane graphScrollPane =
                 new JBScrollPane(
                         graphPanel
                 );
 
-        scrollPane.setBorder(
+        graphScrollPane.setBorder(
                 BorderFactory.createEmptyBorder()
         );
 
+        JSplitPane splitPane =
+                new JSplitPane(
+                        JSplitPane.HORIZONTAL_SPLIT,
+                        graphScrollPane,
+                        detailsPanel
+                );
+
+        splitPane.setResizeWeight(0.65);
+        splitPane.setDividerLocation(0.65);
+
         root.add(
-                scrollPane,
+                splitPane,
                 BorderLayout.CENTER
         );
 

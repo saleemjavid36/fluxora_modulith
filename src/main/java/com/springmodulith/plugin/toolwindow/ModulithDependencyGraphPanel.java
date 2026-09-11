@@ -6,7 +6,9 @@ import com.intellij.util.ui.JBUI;
 import com.springmodulith.plugin.model.ModulithDependencyGraph;
 import com.springmodulith.plugin.model.ModulithModule;
 import org.jetbrains.annotations.NotNull;
-
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.util.function.Consumer;
 import javax.swing.JPanel;
 import java.awt.BasicStroke;
 import java.awt.FontMetrics;
@@ -31,10 +33,65 @@ public final class ModulithDependencyGraphPanel extends JPanel {
     private final Map<String, Point> nodePositions = new HashMap<>();
 
     private ModulithDependencyGraph graph;
+    private Consumer<ModulithModule> moduleSelectionListener;
 
     public ModulithDependencyGraphPanel() {
         setBackground(JBColor.background());
         setBorder(JBUI.Borders.empty(PADDING));
+        addMouseListener(
+                new MouseAdapter() {
+                    @Override
+                    public void mouseClicked(
+                            MouseEvent event) {
+
+                        handleModuleClick(
+                                event.getPoint()
+                        );
+                    }
+                }
+        );
+    }
+    private void handleModuleClick(
+            @NotNull Point point) {
+
+        if (graph == null ||
+                moduleSelectionListener == null) {
+
+            return;
+        }
+
+        for (ModulithModule module :
+                graph.getModules()) {
+
+            Point position =
+                    nodePositions.get(
+                            module.getPackageName()
+                    );
+
+            if (position == null) {
+                continue;
+            }
+
+            int x = position.x;
+            int y = position.y;
+
+            if (point.x >= x &&
+                    point.x <= x + NODE_WIDTH &&
+                    point.y >= y &&
+                    point.y <= y + NODE_HEIGHT) {
+
+                moduleSelectionListener.accept(
+                        module
+                );
+
+                return;
+            }
+        }
+    }
+    public void setModuleSelectionListener(
+            @NotNull Consumer<ModulithModule> listener) {
+
+        this.moduleSelectionListener = listener;
     }
 
     public void setGraph(
