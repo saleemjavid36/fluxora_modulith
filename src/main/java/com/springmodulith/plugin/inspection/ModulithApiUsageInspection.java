@@ -1,12 +1,16 @@
 package com.springmodulith.plugin.inspection;
 
 import com.intellij.codeInspection.AbstractBaseJavaLocalInspectionTool;
+import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.*;
+import com.springmodulith.plugin.quickfix.ExposePackageAsNamedInterfaceFix;
+import com.springmodulith.plugin.quickfix.MarkClassNamedInterfaceFix;
 import org.jetbrains.annotations.NotNull;
-import com.intellij.psi.PsiModifierList;
-import com.intellij.psi.PsiAnnotation;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public final class ModulithApiUsageInspection
         extends AbstractBaseJavaLocalInspectionTool {
@@ -149,6 +153,11 @@ public final class ModulithApiUsageInspection
             return;
         }
 
+        LocalQuickFix[] fixes = createApiQuickFixes(
+                targetClass,
+                targetPackage
+        );
+
         holder.registerProblem(
                 reference.getReferenceNameElement(),
                 "Modulith API violation: "
@@ -156,7 +165,8 @@ public final class ModulithApiUsageInspection
                         + " accesses internal type "
                         + qualifiedName
                         + " from module "
-                        + targetModule
+                        + targetModule,
+                fixes
         );
     }
 
@@ -341,9 +351,7 @@ public final class ModulithApiUsageInspection
                 psiPackage.getDirectories()) {
 
             PsiFile packageInfo =
-                    directory.findFile(
-                            "package-info.java"
-                    );
+                    directory.findFile("package-info.java");
 
             if (!(packageInfo instanceof PsiJavaFile)) {
                 continue;
@@ -367,7 +375,7 @@ public final class ModulithApiUsageInspection
             }
 
             PsiAnnotation annotation =
-                    annotationList.findAnnotation(APPLICATION_MODULE);
+                    annotationList.findAnnotation(NAMED_INTERFACE);
 
             if (annotation != null) {
                 return true;
@@ -384,6 +392,41 @@ public final class ModulithApiUsageInspection
         return packageName.equals(modulePackage)
                 || packageName.startsWith(
                 modulePackage + "."
+        );
+    }
+
+    private static LocalQuickFix[] createApiQuickFixes(
+            @NotNull PsiClass targetClass,
+            @NotNull String targetPackage) {
+
+        List<LocalQuickFix> fixes = new ArrayList<>();
+
+        String qualifiedName =
+                targetClass.getQualifiedName();
+
+        if (qualifiedName != null) {
+            String simpleName =
+                    targetClass.getName();
+
+            if (simpleName != null
+                    && !simpleName.isEmpty()) {
+
+                fixes.add(
+                        new MarkClassNamedInterfaceFix(
+                                simpleName
+                        )
+                );
+            }
+        }
+
+        fixes.add(
+                new ExposePackageAsNamedInterfaceFix(
+                        targetPackage
+                )
+        );
+
+        return fixes.toArray(
+                new LocalQuickFix[0]
         );
     }
 }

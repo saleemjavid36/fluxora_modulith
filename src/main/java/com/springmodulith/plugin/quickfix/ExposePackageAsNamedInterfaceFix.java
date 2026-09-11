@@ -33,7 +33,8 @@ public final class ExposePackageAsNamedInterfaceFix implements LocalQuickFix {
 
     @Override
     public @NotNull String getName() {
-        return "Expose package as named interface '" + interfaceName + "'";
+        return "Expose package '" + packageName
+                + "' as named interface '" + interfaceName + "'";
     }
 
     @Override

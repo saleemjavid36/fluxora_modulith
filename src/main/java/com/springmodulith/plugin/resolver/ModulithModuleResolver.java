@@ -38,6 +38,7 @@ public final class ModulithModuleResolver {
     public static final String SPRING_BOOT_CONFIGURATION = "org.springframework.boot.SpringBootConfiguration";
 
     private static final String ALLOWED_DEPENDENCIES = "allowedDependencies";
+    private static final String TYPE = "type";
     private static final String OPEN = "open";
     private final Project project;
 
@@ -135,8 +136,37 @@ public final class ModulithModuleResolver {
         PsiAnnotation applicationModule = findPackageAnnotation(directory, APPLICATION_MODULE);
         boolean allowedConfigured = applicationModule != null && applicationModule.findDeclaredAttributeValue(ALLOWED_DEPENDENCIES) != null;
         Set<String> allowed = applicationModule == null ? Set.of() : readStringAttribute(applicationModule, ALLOWED_DEPENDENCIES);
-        boolean open = applicationModule != null && readBooleanAttribute(applicationModule, OPEN, false);
+        boolean open =
+                applicationModule != null
+                        && isOpenModule(applicationModule);
         return new ModulithModule(getModuleName(packageName), packageName, open, allowedConfigured, allowed, collectNamedInterfaces(directory, packageName));
+    }
+    private boolean isOpenModule(
+            @NotNull PsiAnnotation annotation) {
+
+        PsiAnnotationMemberValue typeValue =
+                annotation.findDeclaredAttributeValue(TYPE);
+
+        if (typeValue != null) {
+
+            String text =
+                    typeValue.getText();
+
+            if (text != null
+                    && text.trim().endsWith("OPEN")) {
+
+                return true;
+            }
+        }
+
+        /*
+         * Compatibility fallback.
+         */
+        return readBooleanAttribute(
+                annotation,
+                OPEN,
+                false
+        );
     }
 
     @NotNull

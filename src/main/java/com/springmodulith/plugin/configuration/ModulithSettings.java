@@ -20,12 +20,16 @@ public final class ModulithSettings implements PersistentStateComponent<Modulith
         public boolean inspectApiUsage = true;
         public boolean inspectAllowedDependencies = true;
         public boolean inspectEventListeners = true;
+        public boolean inspectCycles = true;
     }
 
     private State state = new State();
 
     public static ModulithSettings getInstance(@NotNull Project project) {
         return project.getService(ModulithSettings.class);
+    }
+    public boolean isInspectCycles() {
+        return state.inspectCycles;
     }
 
     @Override @Nullable public State getState() { return state; }
@@ -38,5 +42,28 @@ public final class ModulithSettings implements PersistentStateComponent<Modulith
     public boolean isInspectApiUsage() { return state.inspectApiUsage; }
     public boolean isInspectAllowedDependencies() { return state.inspectAllowedDependencies; }
     public boolean isInspectEventListeners() { return state.inspectEventListeners; }
-    public void stateForUi(boolean api, boolean deps, boolean events) { state.inspectApiUsage = api; state.inspectAllowedDependencies = deps; state.inspectEventListeners = events; }
+    public void stateForUi(
+            boolean api,
+            boolean deps,
+            boolean events) {
+
+        stateForUi(
+                api,
+                deps,
+                events,
+                state.inspectCycles
+        );
+    }
+
+    public void stateForUi(
+            boolean api,
+            boolean deps,
+            boolean events,
+            boolean cycles) {
+
+        state.inspectApiUsage = api;
+        state.inspectAllowedDependencies = deps;
+        state.inspectEventListeners = events;
+        state.inspectCycles = cycles;
+    }
 }

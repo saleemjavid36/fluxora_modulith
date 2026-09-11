@@ -13,32 +13,73 @@
     <depends>com.intellij.java</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <localInspection language="JAVA" shortName="ModulithDependency" displayName="Spring Modulith dependency"
-                         groupName="Spring Modulith" enabledByDefault="true" level="WARNING"
-                         implementationClass="com.springmodulith.plugin.inspection.ModulithDependencyInspection"/>
-        <localInspection language="JAVA" shortName="ModulithApiUsage" displayName="Spring Modulith API access"
-                         groupName="Spring Modulith" enabledByDefault="true" level="WARNING"
-                         implementationClass="com.springmodulith.plugin.inspection.ModulithApiUsageInspection"/>
-        <localInspection language="JAVA" shortName="ModulithAllowedDependency" displayName="Spring Modulith allowed dependency"
-                         groupName="Spring Modulith" enabledByDefault="true" level="ERROR"
-                         implementationClass="com.springmodulith.plugin.inspection.ModulithAllowedDependencyInspection"/>
-        <localInspection language="JAVA" shortName="ModulithEventListener" displayName="Spring Modulith event listener"
-                         groupName="Spring Modulith" enabledByDefault="true" level="WEAK WARNING"
-                         implementationClass="com.springmodulith.plugin.inspection.ModulithEventListenerInspection"/>
+
+        <localInspection
+                language="JAVA"
+                shortName="ModulithDependency"
+                displayName="Spring Modulith dependency"
+                groupName="Spring Modulith"
+                enabledByDefault="true"
+                level="WARNING"
+                implementationClass="com.springmodulith.plugin.inspection.ModulithDependencyInspection"/>
+
         <localInspection
                 language="JAVA"
                 shortName="ModulithApiUsage"
-                displayName="Spring Modulith API Usage"
+                displayName="Spring Modulith API access"
                 groupName="Spring Modulith"
                 enabledByDefault="true"
                 level="WARNING"
                 implementationClass="com.springmodulith.plugin.inspection.ModulithApiUsageInspection"/>
-        <projectConfigurable instance="com.springmodulith.plugin.configuration.ModulithConfigurable"
-                             displayName="Spring Modulith"/>
-        <completion.contributor language="JAVA" implementationClass="com.springmodulith.plugin.codeInsight.ModulithDependencyCompletionContributor" order="first"/>
-        <psi.referenceContributor language="JAVA" implementation="com.springmodulith.plugin.codeInsight.ModulithDependencyReferenceContributor"/>
-        <implicitUsageProvider implementation="com.springmodulith.plugin.codeInsight.ModulithImplicitUsageProvider"/>
-        <projectViewNodeDecorator implementation="com.springmodulith.plugin.projectView.ModulithProjectViewNodeDecorator"/>
-        <toolWindow id="Spring Modulith" anchor="right" factoryClass="com.springmodulith.plugin.toolwindow.ModulithToolWindowFactory"/>
+
+        <localInspection
+                language="JAVA"
+                shortName="ModulithAllowedDependency"
+                displayName="Spring Modulith allowed dependency"
+                groupName="Spring Modulith"
+                enabledByDefault="true"
+                level="ERROR"
+                implementationClass="com.springmodulith.plugin.inspection.ModulithAllowedDependencyInspection"/>
+        <localInspection
+                language="JAVA"
+                shortName="ModulithCycle"
+                displayName="Spring Modulith module dependency cycle"
+                groupName="Spring Modulith"
+                enabledByDefault="true"
+                level="ERROR"
+                implementationClass="com.springmodulith.plugin.inspection.ModulithCycleInspection"/>
+        <localInspection
+                language="JAVA"
+                shortName="ModulithEventListener"
+                displayName="Spring Modulith event listener"
+                groupName="Spring Modulith"
+                enabledByDefault="true"
+                level="WEAK WARNING"
+                implementationClass="com.springmodulith.plugin.inspection.ModulithEventListenerInspection"/>
+
+        <projectConfigurable
+                instance="com.springmodulith.plugin.configuration.ModulithConfigurable"
+                displayName="Spring Modulith"/>
+
+        <completion.contributor
+                language="JAVA"
+                implementationClass="com.springmodulith.plugin.codeInsight.ModulithDependencyCompletionContributor"
+                order="first"/>
+
+        <psi.referenceContributor
+                language="JAVA"
+                implementation="com.springmodulith.plugin.codeInsight.ModulithDependencyReferenceContributor"/>
+
+        <implicitUsageProvider
+                implementation="com.springmodulith.plugin.codeInsight.ModulithImplicitUsageProvider"/>
+
+        <projectViewNodeDecorator
+                implementation="com.springmodulith.plugin.projectView.ModulithProjectViewNodeDecorator"/>
+
+        <toolWindow
+                id="Spring Modulith"
+                anchor="right"
+                factoryClass="com.springmodulith.plugin.toolwindow.ModulithToolWindowFactory"/>
+
     </extensions>
 </idea-plugin>

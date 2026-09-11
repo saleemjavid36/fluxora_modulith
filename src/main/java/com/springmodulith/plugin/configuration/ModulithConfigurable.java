@@ -23,62 +23,139 @@ public final class ModulithConfigurable implements Configurable {
     private JCheckBox apiUsage;
     private JCheckBox allowedDependencies;
     private JCheckBox eventListeners;
+    private JCheckBox cycles;
 
-    public ModulithConfigurable(Project project) { this.project = project; }
+    public ModulithConfigurable(Project project) {
+        this.project = project;
+    }
 
-    @Override @Nls public String getDisplayName() { return "Spring Modulith"; }
+    @Override
+    @Nls
+    public String getDisplayName() {
+        return "Spring Modulith";
+    }
 
-    @Override @Nullable public JComponent createComponent() {
+    @Override
+    @Nullable
+    public JComponent createComponent() {
         panel = new JPanel(new GridBagLayout());
+
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(6, 6, 6, 6);
         c.anchor = GridBagConstraints.WEST;
         c.fill = GridBagConstraints.HORIZONTAL;
         c.weightx = 0;
+
         panel.add(new JLabel("Root package:"), c);
+
         rootPackage = new JTextField(32);
-        c.gridx = 1; c.weightx = 1;
+        c.gridx = 1;
+        c.weightx = 1;
         panel.add(rootPackage, c);
-        c.gridx = 0; c.gridy = 1; c.weightx = 0;
+
+        c.gridx = 0;
+        c.gridy = 1;
+        c.weightx = 0;
         panel.add(new JLabel("Module detection:"), c);
-        detectionStrategy = new JComboBox<>(new String[]{ModulithSettings.DIRECT_SUB_PACKAGES, ModulithSettings.EXPLICITLY_ANNOTATED});
-        c.gridx = 1; c.weightx = 1;
+
+        detectionStrategy = new JComboBox<>(
+                new String[]{
+                        ModulithSettings.DIRECT_SUB_PACKAGES,
+                        ModulithSettings.EXPLICITLY_ANNOTATED
+                }
+        );
+
+        c.gridx = 1;
+        c.weightx = 1;
         panel.add(detectionStrategy, c);
+
         apiUsage = new JCheckBox("Check cross-module API access");
         allowedDependencies = new JCheckBox("Validate allowedDependencies");
         eventListeners = new JCheckBox("Suggest @ApplicationModuleListener");
-        c.gridx = 0; c.gridy = 2; c.gridwidth = 2; c.weightx = 1;
+        cycles = new JCheckBox("Check module dependency cycles");
+
+        c.gridx = 0;
+        c.gridy = 2;
+        c.gridwidth = 2;
+        c.weightx = 1;
+
         panel.add(apiUsage, c);
-        c.gridy = 3; panel.add(allowedDependencies, c);
-        c.gridy = 4; panel.add(eventListeners, c);
+
+        c.gridy = 3;
+        panel.add(allowedDependencies, c);
+
+        c.gridy = 4;
+        panel.add(eventListeners, c);
+
+        c.gridy = 5;
+        panel.add(cycles, c);
+
         reset();
+
         return panel;
     }
 
-    @Override public boolean isModified() {
-        ModulithSettings s = ModulithSettings.getInstance(project);
-        return !rootPackage.getText().trim().equals(s.getRootPackage())
-                || !detectionStrategy.getSelectedItem().equals(s.getDetectionStrategy())
-                || apiUsage.isSelected() != s.isInspectApiUsage()
-                || allowedDependencies.isSelected() != s.isInspectAllowedDependencies()
-                || eventListeners.isSelected() != s.isInspectEventListeners();
+    @Override
+    public boolean isModified() {
+        ModulithSettings s =
+                ModulithSettings.getInstance(project);
+
+        return !rootPackage.getText()
+                .trim()
+                .equals(s.getRootPackage())
+                || !detectionStrategy
+                .getSelectedItem()
+                .equals(s.getDetectionStrategy())
+                || apiUsage.isSelected()
+                != s.isInspectApiUsage()
+                || allowedDependencies.isSelected()
+                != s.isInspectAllowedDependencies()
+                || eventListeners.isSelected()
+                != s.isInspectEventListeners()
+                || cycles.isSelected()
+                != s.isInspectCycles();
     }
 
-    @Override public void apply() {
-        ModulithSettings s = ModulithSettings.getInstance(project);
+    @Override
+    public void apply() {
+        ModulithSettings s =
+                ModulithSettings.getInstance(project);
+
         s.setRootPackage(rootPackage.getText());
-        s.setDetectionStrategy((String) detectionStrategy.getSelectedItem());
-        s.stateForUi(apiUsage.isSelected(), allowedDependencies.isSelected(), eventListeners.isSelected());
+        s.setDetectionStrategy(
+                (String) detectionStrategy.getSelectedItem()
+        );
+
+        s.stateForUi(
+                apiUsage.isSelected(),
+                allowedDependencies.isSelected(),
+                eventListeners.isSelected(),
+                cycles.isSelected()
+        );
     }
 
-    @Override public void reset() {
-        ModulithSettings s = ModulithSettings.getInstance(project);
+    @Override
+    public void reset() {
+        ModulithSettings s =
+                ModulithSettings.getInstance(project);
+
         rootPackage.setText(s.getRootPackage());
         detectionStrategy.setSelectedItem(s.getDetectionStrategy());
+
         apiUsage.setSelected(s.isInspectApiUsage());
         allowedDependencies.setSelected(s.isInspectAllowedDependencies());
         eventListeners.setSelected(s.isInspectEventListeners());
+        cycles.setSelected(s.isInspectCycles());
     }
 
-    @Override public void disposeUIResources() { panel = null; rootPackage = null; detectionStrategy = null; apiUsage = null; allowedDependencies = null; eventListeners = null; }
+    @Override
+    public void disposeUIResources() {
+        panel = null;
+        rootPackage = null;
+        detectionStrategy = null;
+        apiUsage = null;
+        allowedDependencies = null;
+        eventListeners = null;
+        cycles = null;
+    }
 }
