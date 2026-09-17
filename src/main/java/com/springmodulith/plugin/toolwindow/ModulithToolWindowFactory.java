@@ -12,181 +12,88 @@ import com.intellij.ui.components.JBPanel;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.content.ContentFactory;
 import com.intellij.util.ui.JBUI;
-import com.springmodulith.plugin.analyzer.ModulithDependencyGraphAnalyzer;
+import com.springmodulith.plugin.action.ModulithExportArchitectureAction;
+import com.springmodulith.plugin.configuration.ModulithProjectModelService;
 import com.springmodulith.plugin.model.ModulithDependencyGraph;
 import org.jetbrains.annotations.NotNull;
 
-import javax.swing.JSplitPane;
-
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
+import javax.swing.JTabbedPane;
 import javax.swing.JPanel;
+import javax.swing.JSplitPane;
 import java.awt.BorderLayout;
 
-public final class ModulithToolWindowFactory
-        implements ToolWindowFactory {
-    private ModulithDependencyGraphPanel graphPanel;
-    private ModulithModuleDetailsPanel moduleDetailsPanel;
-
+public final class ModulithToolWindowFactory implements ToolWindowFactory {
     @Override
-    public void createToolWindowContent(
-            @NotNull Project project,
-            @NotNull ToolWindow toolWindow) {
+    public void createToolWindowContent(@NotNull Project project, @NotNull ToolWindow toolWindow) {
+        JPanel root = new JBPanel<>(new BorderLayout(8, 8));
+        root.setBorder(JBUI.Borders.empty(8));
 
-        JPanel root =
-                new JBPanel<>(
-                        new BorderLayout(
-                                8,
-                                8
-                        )
-                );
+        JPanel header = new JBPanel<>(new BorderLayout(8, 8));
+        header.add(new JBLabel("Spring Modulith Architecture"), BorderLayout.WEST);
+        JPanel buttons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 6, 0));
+        JButton refreshButton = new JButton("Refresh");
+        JButton exportButton = new JButton("Export JSON");
+        buttons.add(exportButton);
+        buttons.add(refreshButton);
+        header.add(buttons, BorderLayout.EAST);
+        root.add(header, BorderLayout.NORTH);
 
-        root.setBorder(
-                JBUI.Borders.empty(8)
-        );
+        ModulithDependencyGraphPanel graphPanel = new ModulithDependencyGraphPanel(project);
+        ModulithModuleDetailsPanel detailsPanel = new ModulithModuleDetailsPanel(project);
+        graphPanel.setModuleSelectionListener(detailsPanel::showModule);
+        graphPanel.setDependencySelectionListener(detailsPanel::showDependency);
 
-        JPanel header =
-                new JBPanel<>(
-                        new BorderLayout(
-                                8,
-                                8
-                        )
-                );
+        JSplitPane graphSplit = new JSplitPane(
+                JSplitPane.HORIZONTAL_SPLIT,
+                new JBScrollPane(graphPanel),
+                detailsPanel);
+        graphSplit.setResizeWeight(0.65);
+        graphSplit.setDividerLocation(0.65);
 
-        JBLabel title =
-                new JBLabel(
-                        "Spring Modulith Module Graph"
-                );
+        ModulithStructureTreePanel structurePanel = new ModulithStructureTreePanel(project);
+        ModulithVerificationPanel verificationPanel = new ModulithVerificationPanel(project);
 
-        header.add(
-                title,
-                BorderLayout.WEST
-        );
+        JTabbedPane tabs = new JTabbedPane();
+        tabs.addTab("Module Graph", graphSplit);
+        tabs.addTab("Module Structure", structurePanel);
+        tabs.addTab("Verification", verificationPanel);
+        root.add(tabs, BorderLayout.CENTER);
 
-        JButton refreshButton =
-                new JButton(
-                        "Refresh"
-                );
+        project.getService(ModulithToolWindowController.class).register(tabs, verificationPanel);
 
-        header.add(
-                refreshButton,
-                BorderLayout.EAST
-        );
+        refreshButton.addActionListener(e -> loadGraph(project, graphPanel, structurePanel, refreshButton));
+        exportButton.addActionListener(e -> ModulithExportArchitectureAction.export(project));
+        loadGraph(project, graphPanel, structurePanel, refreshButton);
 
-        root.add(
-                header,
-                BorderLayout.NORTH
-        );
-
-        graphPanel =
-                new ModulithDependencyGraphPanel(project);
-
-        moduleDetailsPanel =
-                new ModulithModuleDetailsPanel(project);
-
-        graphPanel.setModuleSelectionListener(
-                moduleDetailsPanel::showModule
-        );
-        graphPanel.setDependencySelectionListener(
-                moduleDetailsPanel::showDependency
-        );
-
-        JBScrollPane graphScrollPane =
-                new JBScrollPane(
-                        graphPanel
-                );
-
-        graphScrollPane.setBorder(
-                BorderFactory.createEmptyBorder()
-        );
-
-        JSplitPane splitPane =
-                new JSplitPane(
-                        JSplitPane.HORIZONTAL_SPLIT,
-                        graphScrollPane,
-                        moduleDetailsPanel
-                );
-
-        splitPane.setResizeWeight(0.65);
-        splitPane.setDividerLocation(0.65);
-
-        root.add(
-                splitPane,
-                BorderLayout.CENTER
-        );
-
-        refreshButton.addActionListener(
-                event ->
-                        loadGraph(
-                                project,
-                                graphPanel,
-                                refreshButton
-                        )
-        );
-
-        loadGraph(
-                project,
-                graphPanel,
-                refreshButton
-        );
-
-        toolWindow
-                .getContentManager()
-                .addContent(
-                        ContentFactory
-                                .getInstance()
-                                .createContent(
-                                        root,
-                                        "Module Graph",
-                                        false
-                                )
-                );
-
+        toolWindow.getContentManager().addContent(
+                ContentFactory.getInstance().createContent(root, "Module Graph", false));
     }
 
     private void loadGraph(
             @NotNull Project project,
             @NotNull ModulithDependencyGraphPanel graphPanel,
+            @NotNull ModulithStructureTreePanel structurePanel,
             @NotNull JButton refreshButton) {
-
         refreshButton.setEnabled(false);
         graphPanel.clearGraph();
+        project.getService(ModulithProjectModelService.class).invalidate();
 
-        new Task.Backgroundable(
-                project,
-                "Analyzing Spring Modulith modules",
-                true
-        ) {
-            @Override
-            public void run(@NotNull ProgressIndicator indicator) {
-
+        new Task.Backgroundable(project, "Analyzing Spring Modulith modules", true) {
+            @Override public void run(@NotNull ProgressIndicator indicator) {
                 indicator.setIndeterminate(true);
-
-                ModulithDependencyGraph graph =
-                        DumbService.getInstance(project)
-                                .runReadActionInSmartMode(
-                                        () -> new ModulithDependencyGraphAnalyzer(project)
-                                                .analyze()
-                                );
-
+                ModulithDependencyGraph graph = DumbService.getInstance(project)
+                        .runReadActionInSmartMode(() -> project.getService(ModulithProjectModelService.class).getGraph());
                 ApplicationManager.getApplication().invokeLater(() -> {
-                    if (project.isDisposed()) {
-                        return;
-                    }
-
+                    if (project.isDisposed()) return;
                     graphPanel.setGraph(graph);
-                    moduleDetailsPanel.setGraph(graph);
+                    structurePanel.setGraph(graph);
                     refreshButton.setEnabled(true);
                 });
             }
-
-            @Override
-            public void onThrowable(@NotNull Throwable error) {
-                ApplicationManager.getApplication().invokeLater(() -> {
-                    if (!project.isDisposed()) {
-                        refreshButton.setEnabled(true);
-                    }
-                });
+            @Override public void onThrowable(@NotNull Throwable error) {
+                ApplicationManager.getApplication().invokeLater(() -> refreshButton.setEnabled(true));
             }
         }.queue();
     }

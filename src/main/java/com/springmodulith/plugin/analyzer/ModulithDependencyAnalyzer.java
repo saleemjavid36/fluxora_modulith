@@ -4,6 +4,7 @@ import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.roots.ProjectRootManager;
+import com.intellij.openapi.roots.GeneratedSourcesFilter;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
@@ -11,10 +12,13 @@ import com.intellij.psi.PsiJavaCodeReferenceElement;
 import com.intellij.psi.PsiJavaFile;
 import com.intellij.psi.PsiRecursiveElementVisitor;
 import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.util.PsiModificationTracker;
+import com.intellij.openapi.project.DumbService;
 import com.springmodulith.plugin.model.ModulithDependencyAnalysis;
 import com.springmodulith.plugin.model.ModulithDependencyReference;
 import com.springmodulith.plugin.model.ModulithModule;
 import com.springmodulith.plugin.model.NamedInterface;
+import com.springmodulith.plugin.configuration.ModulithSettings;
 import com.springmodulith.plugin.resolver.ModulithModuleResolver;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -37,6 +41,7 @@ public final class ModulithDependencyAnalyzer {
     private final ProjectFileIndex fileIndex;
     private final PsiDocumentManager documentManager;
     private final Map<String, List<ModulithModule>> modulesByContextPackage = new HashMap<>();
+    private long modulesModificationCount = -1L;
 
     public ModulithDependencyAnalyzer(
             @NotNull ModulithModuleResolver resolver,
@@ -55,7 +60,7 @@ public final class ModulithDependencyAnalyzer {
 
     @NotNull
     public List<ModulithDependencyAnalysis> analyzeProject() {
-        if (project.isDisposed()) {
+        if (project.isDisposed() || DumbService.isDumb(project)) {
             return List.of();
         }
 
@@ -71,6 +76,7 @@ public final class ModulithDependencyAnalyzer {
             if (project.isDisposed()
                     || !fileIndex.isInSourceContent(virtualFile)
                     || fileIndex.isInTestSourceContent(virtualFile)
+                    || GeneratedSourcesFilter.isGeneratedSourceByAnyFilter(virtualFile, project)
                     || !"java".equalsIgnoreCase(virtualFile.getExtension())) {
                 return !project.isDisposed();
             }
@@ -118,11 +124,38 @@ public final class ModulithDependencyAnalyzer {
         String contextPackage = contextFile instanceof PsiJavaFile javaFile
                 ? javaFile.getPackageName()
                 : contextFile.getName();
+        long currentModificationCount = PsiModificationTracker.getInstance(project).getModificationCount();
+        if (modulesModificationCount != currentModificationCount) {
+            modulesByContextPackage.clear();
+            modulesModificationCount = currentModificationCount;
+        }
 
         return modulesByContextPackage.computeIfAbsent(
                 contextPackage,
                 ignored -> List.copyOf(resolver.resolveModules(contextFile))
         );
+    }
+
+    private boolean isAllowedByConfiguredRules(
+            @NotNull ModulithModule source,
+            @NotNull ModulithModule target,
+            @NotNull String qualifiedType,
+            @NotNull String targetPackage) {
+        java.util.Set<String> override = ModulithSettings.getInstance(project)
+                .getDependencyOverrideMap()
+                .get(source.getPackageName());
+        if (override != null) {
+            for (String ruleText : override) {
+                ModulithModule.DependencyRule rule = ModulithModule.DependencyRule.parse(ruleText);
+                if (rule == null || !target.matchesModuleId(rule.moduleId())) continue;
+                if (rule.interfaceId() == null || "*".equals(rule.interfaceId())) return true;
+                NamedInterface namedInterface = target.findNamedInterface(rule.interfaceId());
+                if (namedInterface != null && namedInterface.contains(qualifiedType, targetPackage)) return true;
+            }
+            return false;
+        }
+        return !source.isAllowedDependenciesConfigured()
+                || source.allowsType(qualifiedType, targetPackage, target);
     }
 
     private String referenceKey(@NotNull ModulithDependencyAnalysis analysis) {
@@ -172,8 +205,7 @@ public final class ModulithDependencyAnalyzer {
             return null;
         }
 
-        boolean allowed = !source.isAllowedDependenciesConfigured()
-                || source.allowsType(qualifiedType, targetPackage, target);
+        boolean allowed = isAllowedByConfiguredRules(source, target, qualifiedType, targetPackage);
         boolean apiViolation = !target.exposes(qualifiedType, targetPackage);
 
         NamedInterface namedInterface =

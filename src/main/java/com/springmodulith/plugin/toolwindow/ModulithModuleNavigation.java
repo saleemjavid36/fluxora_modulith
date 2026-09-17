@@ -60,6 +60,18 @@ public final class ModulithModuleNavigation {
         }
     }
 
+    public static void openQualifiedType(
+            @NotNull Project project,
+            @NotNull String qualifiedName) {
+        var clazz = JavaPsiFacade.getInstance(project).findClass(
+                qualifiedName,
+                com.intellij.psi.search.GlobalSearchScope.projectScope(project)
+        );
+        if (clazz != null && clazz.getContainingFile() != null) {
+            new OpenFileDescriptor(project, clazz.getContainingFile(), clazz.getTextOffset()).navigate(true);
+        }
+    }
+
     private static PsiDirectory findPackageDirectory(
             @NotNull Project project,
             @NotNull String packageName) {

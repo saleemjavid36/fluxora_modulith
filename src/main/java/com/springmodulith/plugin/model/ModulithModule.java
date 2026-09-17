@@ -64,7 +64,7 @@ public final class ModulithModule {
         if (!allowedDependenciesConfigured) return true;
         for (String dependency : allowedDependencies) {
             DependencyRule rule = DependencyRule.parse(dependency);
-            if (rule != null && target.matches(rule.moduleId())) {
+            if (rule != null && target.matchesModuleId(rule.moduleId())) {
                 if (rule.interfaceId() == null || "*".equals(rule.interfaceId())) return true;
                 if (target.hasNamedInterface(rule.interfaceId())) return true;
             }
@@ -126,7 +126,7 @@ public final class ModulithModule {
                 continue;
             }
 
-            if (!target.matches(rule.moduleId())) {
+            if (!target.matchesModuleId(rule.moduleId())) {
                 continue;
             }
 
@@ -174,7 +174,7 @@ public final class ModulithModule {
         return null;
     }
 
-    private boolean matches(@NotNull String id) {
+    public boolean matchesModuleId(@NotNull String id) {
         return name.equals(id) || packageName.equals(id);
     }
 
@@ -197,7 +197,7 @@ public final class ModulithModule {
         }
 
         private boolean moduleIdMatchesModule(ModulithModule module) {
-            return module.matches(moduleId);
+            return module.matchesModuleId(moduleId);
         }
     }
 }

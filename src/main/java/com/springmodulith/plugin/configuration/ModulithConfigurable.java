@@ -24,6 +24,9 @@ public final class ModulithConfigurable implements Configurable {
     private JCheckBox allowedDependencies;
     private JCheckBox eventListeners;
     private JCheckBox cycles;
+    private JTextField excludedPackages;
+    private JTextField additionalModules;
+    private JTextField dependencyOverrides;
 
     public ModulithConfigurable(Project project) {
         this.project = project;
@@ -39,7 +42,6 @@ public final class ModulithConfigurable implements Configurable {
     @Nullable
     public JComponent createComponent() {
         panel = new JPanel(new GridBagLayout());
-
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(6, 6, 6, 6);
         c.anchor = GridBagConstraints.WEST;
@@ -47,53 +49,39 @@ public final class ModulithConfigurable implements Configurable {
         c.weightx = 0;
 
         panel.add(new JLabel("Root package:"), c);
-
         rootPackage = new JTextField(32);
-        c.gridx = 1;
-        c.weightx = 1;
-        panel.add(rootPackage, c);
+        c.gridx = 1; c.weightx = 1; panel.add(rootPackage, c);
 
-        c.gridx = 0;
-        c.gridy = 1;
-        c.weightx = 0;
+        c.gridx = 0; c.gridy = 1; c.weightx = 0;
         panel.add(new JLabel("Module detection:"), c);
+        detectionStrategy = new JComboBox<>(new String[]{ModulithSettings.DIRECT_SUB_PACKAGES, ModulithSettings.EXPLICITLY_ANNOTATED});
+        c.gridx = 1; c.weightx = 1; panel.add(detectionStrategy, c);
 
-        detectionStrategy = new JComboBox<>(
-                new String[]{
-                        ModulithSettings.DIRECT_SUB_PACKAGES,
-                        ModulithSettings.EXPLICITLY_ANNOTATED
-                }
-        );
+        c.gridx = 0; c.gridy = 2; c.weightx = 0;
+        panel.add(new JLabel("Additional module packages:"), c);
+        additionalModules = new JTextField(32);
+        c.gridx = 1; c.weightx = 1; panel.add(additionalModules, c);
 
-        c.gridx = 1;
-        c.weightx = 1;
-        panel.add(detectionStrategy, c);
+        c.gridx = 0; c.gridy = 3; c.weightx = 0;
+        panel.add(new JLabel("Excluded package prefixes:"), c);
+        excludedPackages = new JTextField(32);
+        c.gridx = 1; c.weightx = 1; panel.add(excludedPackages, c);
+
+        c.gridx = 0; c.gridy = 4; c.weightx = 0;
+        panel.add(new JLabel("Dependency overrides:"), c);
+        dependencyOverrides = new JTextField(32);
+        c.gridx = 1; c.weightx = 1; panel.add(dependencyOverrides, c);
 
         apiUsage = new JCheckBox("Check cross-module API access");
         allowedDependencies = new JCheckBox("Validate allowedDependencies");
         eventListeners = new JCheckBox("Suggest @ApplicationModuleListener");
         cycles = new JCheckBox("Check module dependency cycles");
-
-        c.gridx = 0;
-        c.gridy = 5;
-        c.gridwidth = 2;
-        c.weightx = 1;
-
-        panel.add(cycles, c);
-
-        panel.add(apiUsage, c);
-
-        c.gridy = 3;
-        panel.add(allowedDependencies, c);
-
-        c.gridy = 4;
-        panel.add(eventListeners, c);
-
-        c.gridy = 5;
-        panel.add(cycles, c);
+        c.gridx = 0; c.gridy = 5; c.gridwidth = 2; c.weightx = 1; panel.add(apiUsage, c);
+        c.gridy = 6; panel.add(allowedDependencies, c);
+        c.gridy = 7; panel.add(eventListeners, c);
+        c.gridy = 8; panel.add(cycles, c);
 
         reset();
-
         return panel;
     }
 
@@ -115,7 +103,10 @@ public final class ModulithConfigurable implements Configurable {
                 || eventListeners.isSelected()
                 != s.isInspectEventListeners()
                 || cycles.isSelected()
-                != s.isInspectCycles();
+                != s.isInspectCycles()
+                || !excludedPackages.getText().trim().equals(String.join(", ", s.getExcludedPackagePrefixes()))
+                || !additionalModules.getText().trim().equals(String.join(", ", s.getAdditionalModulePackages()))
+                || !dependencyOverrides.getText().trim().equals(String.join(", ", s.getDependencyOverrides()));
     }
 
     @Override
@@ -127,6 +118,10 @@ public final class ModulithConfigurable implements Configurable {
         s.setDetectionStrategy(
                 (String) detectionStrategy.getSelectedItem()
         );
+
+        s.setExcludedPackagePrefixes(excludedPackages.getText());
+        s.setAdditionalModulePackages(additionalModules.getText());
+        s.setDependencyOverrides(dependencyOverrides.getText());
 
         s.stateForUi(
                 apiUsage.isSelected(),
@@ -147,6 +142,9 @@ public final class ModulithConfigurable implements Configurable {
         allowedDependencies.setSelected(s.isInspectAllowedDependencies());
         eventListeners.setSelected(s.isInspectEventListeners());
         cycles.setSelected(s.isInspectCycles());
+        excludedPackages.setText(String.join(", ", s.getExcludedPackagePrefixes()));
+        additionalModules.setText(String.join(", ", s.getAdditionalModulePackages()));
+        dependencyOverrides.setText(String.join(", ", s.getDependencyOverrides()));
     }
 
     @Override
@@ -158,5 +156,8 @@ public final class ModulithConfigurable implements Configurable {
         allowedDependencies = null;
         eventListeners = null;
         cycles = null;
+        excludedPackages = null;
+        additionalModules = null;
+        dependencyOverrides = null;
     }
 }

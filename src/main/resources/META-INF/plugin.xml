@@ -11,7 +11,20 @@
 
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.java</depends>
-
+    <actions>
+        <action id="com.springmodulith.plugin.verifyArchitecture"
+                class="com.springmodulith.plugin.action.ModulithVerifyArchitectureAction"
+                text="Verify Spring Modulith Architecture"
+                description="Verify all detected Spring Modulith module boundaries and dependencies">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+        <action id="com.springmodulith.plugin.exportArchitecture"
+                class="com.springmodulith.plugin.action.ModulithExportArchitectureAction"
+                text="Export Spring Modulith Architecture"
+                description="Export the detected Spring Modulith architecture as JSON">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+    </actions>
     <extensions defaultExtensionNs="com.intellij">
 
         <localInspection

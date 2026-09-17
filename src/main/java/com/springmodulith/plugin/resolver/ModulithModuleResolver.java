@@ -41,7 +41,8 @@ public final class ModulithModuleResolver {
     public List<ModulithModule> resolveModules(@Nullable PsiFile contextFile) {
         String rootPackage = resolveRootPackage(contextFile);
         List<ModulithModule> result = new ArrayList<>();
-        String strategy = ModulithSettings.getInstance(project).getDetectionStrategy();
+        ModulithSettings settings = ModulithSettings.getInstance(project);
+        String strategy = settings.getDetectionStrategy();
 
         if (!rootPackage.isEmpty()) {
             List<PsiDirectory> roots = findDirectoriesForPackage(rootPackage);
@@ -66,8 +67,23 @@ public final class ModulithModuleResolver {
             collectAllExplicitModules(result);
         }
 
-        result.sort(Comparator.comparing(ModulithModule::getPackageName));
-        return deduplicate(result);
+        for (String additionalPackage : settings.getAdditionalModulePackages()) {
+            for (PsiDirectory directory : findDirectoriesForPackage(additionalPackage)) {
+                if (containsJavaSource(directory)) result.add(toModule(directory, additionalPackage));
+            }
+        }
+
+        List<ModulithModule> filtered = deduplicate(result);
+        filtered.removeIf(module -> isExcluded(module.getPackageName(), settings.getExcludedPackagePrefixes()));
+        filtered.sort(Comparator.comparing(ModulithModule::getPackageName));
+        return filtered;
+    }
+
+    private boolean isExcluded(@NotNull String packageName, @NotNull List<String> prefixes) {
+        for (String prefix : prefixes) {
+            if (packageName.equals(prefix) || packageName.startsWith(prefix + ".")) return true;
+        }
+        return false;
     }
 
     private void collectDirectModules(
