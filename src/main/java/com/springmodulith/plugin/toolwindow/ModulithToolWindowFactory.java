@@ -63,9 +63,10 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
 
         project.getService(ModulithToolWindowController.class).register(tabs, verificationPanel);
 
-        refreshButton.addActionListener(e -> loadGraph(project, graphPanel, structurePanel, refreshButton));
+        refreshButton.addActionListener(e ->
+                loadGraph(project, graphPanel, detailsPanel, structurePanel, refreshButton));
         exportButton.addActionListener(e -> ModulithExportArchitectureAction.export(project));
-        loadGraph(project, graphPanel, structurePanel, refreshButton);
+        loadGraph(project, graphPanel, detailsPanel, structurePanel, refreshButton);
 
         toolWindow.getContentManager().addContent(
                 ContentFactory.getInstance().createContent(root, "Module Graph", false));
@@ -74,26 +75,51 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
     private void loadGraph(
             @NotNull Project project,
             @NotNull ModulithDependencyGraphPanel graphPanel,
+            @NotNull ModulithModuleDetailsPanel detailsPanel,
             @NotNull ModulithStructureTreePanel structurePanel,
             @NotNull JButton refreshButton) {
+
         refreshButton.setEnabled(false);
         graphPanel.clearGraph();
+        detailsPanel.clear();
+
         project.getService(ModulithProjectModelService.class).invalidate();
 
-        new Task.Backgroundable(project, "Analyzing Spring Modulith modules", true) {
-            @Override public void run(@NotNull ProgressIndicator indicator) {
+        new Task.Backgroundable(
+                project,
+                "Analyzing Spring Modulith modules",
+                true) {
+
+            @Override
+            public void run(@NotNull ProgressIndicator indicator) {
                 indicator.setIndeterminate(true);
-                ModulithDependencyGraph graph = DumbService.getInstance(project)
-                        .runReadActionInSmartMode(() -> project.getService(ModulithProjectModelService.class).getGraph());
+
+                ModulithDependencyGraph graph =
+                        DumbService.getInstance(project)
+                                .runReadActionInSmartMode(() ->
+                                        project.getService(
+                                                ModulithProjectModelService.class
+                                        ).getGraph()
+                                );
+
                 ApplicationManager.getApplication().invokeLater(() -> {
-                    if (project.isDisposed()) return;
+                    if (project.isDisposed()) {
+                        return;
+                    }
+
                     graphPanel.setGraph(graph);
+                    detailsPanel.setGraph(graph);
                     structurePanel.setGraph(graph);
+
                     refreshButton.setEnabled(true);
                 });
             }
-            @Override public void onThrowable(@NotNull Throwable error) {
-                ApplicationManager.getApplication().invokeLater(() -> refreshButton.setEnabled(true));
+
+            @Override
+            public void onThrowable(@NotNull Throwable error) {
+                ApplicationManager.getApplication().invokeLater(() ->
+                        refreshButton.setEnabled(true)
+                );
             }
         }.queue();
     }

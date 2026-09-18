@@ -34,9 +34,12 @@ public final class ModulithDependencyGraphPanel extends JPanel {
     private static final int VERTICAL_GAP = 95;
     private static final int PADDING = 50;
     private static final int LEGEND_HEIGHT = 34;
+    private static final int EMPTY_STATE_WIDTH = 520;
+    private static final int EMPTY_STATE_HEIGHT = 180;
 
     private final Project project;
     private final Map<String, Point> nodePositions = new HashMap<>();
+
 
     private ModulithDependencyGraph graph;
     private ModulithModule selectedModule;
@@ -155,13 +158,99 @@ public final class ModulithDependencyGraphPanel extends JPanel {
 
         Graphics2D g = (Graphics2D) graphics.create();
         try {
-            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(
+                    RenderingHints.KEY_ANTIALIASING,
+                    RenderingHints.VALUE_ANTIALIAS_ON
+            );
+
+            if (graph.getModules().isEmpty()) {
+                paintEmptyState(g);
+                return;
+            }
+
             paintDependencies(g);
             paintModules(g);
             paintLegend(g);
         } finally {
             g.dispose();
         }
+    }
+    private void paintEmptyState(@NotNull Graphics2D g) {
+        int centerX = getWidth() / 2;
+        int centerY = getHeight() / 2;
+
+        int cardX = centerX - EMPTY_STATE_WIDTH / 2;
+        int cardY = centerY - EMPTY_STATE_HEIGHT / 2;
+
+        g.setColor(JBColor.namedColor(
+                "Panel.background",
+                getBackground()
+        ));
+        g.fillRoundRect(
+                cardX,
+                cardY,
+                EMPTY_STATE_WIDTH,
+                EMPTY_STATE_HEIGHT,
+                16,
+                16
+        );
+
+        g.setColor(JBColor.namedColor(
+                "Borders.color",
+                JBColor.GRAY
+        ));
+        g.drawRoundRect(
+                cardX,
+                cardY,
+                EMPTY_STATE_WIDTH,
+                EMPTY_STATE_HEIGHT,
+                16,
+                16
+        );
+
+        Font originalFont = g.getFont();
+
+        g.setColor(JBColor.foreground());
+        g.setFont(originalFont.deriveFont(Font.BOLD, 16.0f));
+
+        String title = "No Spring Modulith modules found";
+        FontMetrics metrics = g.getFontMetrics();
+
+        g.drawString(
+                title,
+                centerX - metrics.stringWidth(title) / 2,
+                centerY - 20
+        );
+
+        g.setFont(originalFont.deriveFont(Font.PLAIN, 13.0f));
+        g.setColor(JBColor.namedColor(
+                "Label.secondaryForeground",
+                JBColor.GRAY
+        ));
+
+        String message =
+                "No recognized application modules were detected in this project.";
+
+        metrics = g.getFontMetrics();
+
+        g.drawString(
+                message,
+                centerX - metrics.stringWidth(message) / 2,
+                centerY + 8
+        );
+
+        String hint =
+                "Add @ApplicationModule or configure module detection to populate the graph.";
+
+        metrics = g.getFontMetrics();
+
+        g.drawString(
+                hint,
+                centerX - metrics.stringWidth(hint) / 2,
+                centerY + 32
+        );
+
+        g.setFont(originalFont);
     }
 
     private void paintModules(@NotNull Graphics2D g) {
@@ -391,7 +480,16 @@ public final class ModulithDependencyGraphPanel extends JPanel {
 
     private void calculateLayout() {
         nodePositions.clear();
-        if (graph == null || graph.getModules().isEmpty()) return;
+
+        if (graph == null) return;
+
+        if (graph.getModules().isEmpty()) {
+            setPreferredSize(new Dimension(
+                    Math.max(650, EMPTY_STATE_WIDTH + PADDING * 2),
+                    450
+            ));
+            return;
+        }
 
         List<ModulithModule> modules = new ArrayList<>(graph.getModules());
         int columns = Math.max(1, (int) Math.ceil(Math.sqrt(modules.size())));

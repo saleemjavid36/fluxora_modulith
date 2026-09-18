@@ -55,11 +55,38 @@ public final class ModulithModuleDetailsPanel extends JPanel {
 
     public void setGraph(@Nullable ModulithDependencyGraph graph) {
         this.graph = graph;
-        if (graph == null) {
-            clear();
+
+        if (graph != null && graph.getModules().isEmpty()) {
+            showNoModulesFound();
         } else {
             clear();
         }
+    }
+    private void showNoModulesFound() {
+        moduleName.setText("No Spring Modulith modules found");
+        packageName.setText("");
+        status.setText("");
+
+        content.removeAll();
+
+        content.add(Box.createVerticalStrut(12));
+
+        content.add(new JBLabel(
+                "No recognized application modules were detected in this project."
+        ));
+
+        content.add(Box.createVerticalStrut(6));
+
+        content.add(new JBLabel(
+                "Add @ApplicationModule or configure module detection to"
+        ));
+
+        content.add(new JBLabel(
+                "populate the architecture graph."
+        ));
+
+        revalidate();
+        repaint();
     }
 
     public void showModule(@Nullable ModulithModule module) {
