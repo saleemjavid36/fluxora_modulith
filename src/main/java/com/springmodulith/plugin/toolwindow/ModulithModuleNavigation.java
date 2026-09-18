@@ -3,6 +3,7 @@ package com.springmodulith.plugin.toolwindow;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.JavaPsiFacade;
 import com.intellij.psi.PsiDirectory;
 import com.intellij.psi.PsiFile;
@@ -67,8 +68,10 @@ public final class ModulithModuleNavigation {
                 qualifiedName,
                 com.intellij.psi.search.GlobalSearchScope.projectScope(project)
         );
+        VirtualFile virtualFile =
+                clazz.getContainingFile().getVirtualFile();
         if (clazz != null && clazz.getContainingFile() != null) {
-            new OpenFileDescriptor(project, clazz.getContainingFile(), clazz.getTextOffset()).navigate(true);
+            new OpenFileDescriptor(project, virtualFile, clazz.getTextOffset()).navigate(true);
         }
     }
 

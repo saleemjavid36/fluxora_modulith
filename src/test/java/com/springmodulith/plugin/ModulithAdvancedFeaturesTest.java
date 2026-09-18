@@ -21,15 +21,14 @@ class ModulithAdvancedFeaturesTest extends LightJavaCodeInsightFixtureTestCase5 
                 "package com.example.custom; public class CustomService {}"
         );
 
-        ModulithSettings settings =
-                ModulithSettings.getInstance(fixture.getProject());
+        ModulithSettings settings = ModulithSettings.getInstance(getFixture().getJavaFacade().getProject());
 
         settings.setRootPackage("com.example.missing");
         settings.setAdditionalModulePackages("com.example.custom");
         settings.setDetectionStrategy(ModulithSettings.EXPLICITLY_ANNOTATED);
 
         assertTrue(
-                new ModulithModuleResolver(fixture.getProject())
+                new ModulithModuleResolver(getFixture().getJavaFacade().getProject())
                         .resolveModules()
                         .stream()
                         .anyMatch(module ->
@@ -70,7 +69,7 @@ class ModulithAdvancedFeaturesTest extends LightJavaCodeInsightFixtureTestCase5 
         );
 
         ModulithSettings settings =
-                ModulithSettings.getInstance(fixture.getProject());
+                ModulithSettings.getInstance(getFixture().getJavaFacade().getProject());
 
         settings.setRootPackage("com.example");
         settings.setDetectionStrategy(ModulithSettings.DIRECT_SUB_PACKAGES);
@@ -80,8 +79,8 @@ class ModulithAdvancedFeaturesTest extends LightJavaCodeInsightFixtureTestCase5 
 
         List<ModulithDependencyAnalysis> analyses =
                 new ModulithDependencyAnalyzer(
-                        new ModulithModuleResolver(fixture.getProject()),
-                        fixture.getProject()
+                        new ModulithModuleResolver(getFixture().getJavaFacade().getProject()),
+                        getFixture().getJavaFacade().getProject()
                 ).analyzeProject();
 
         assertFalse(
@@ -91,6 +90,6 @@ class ModulithAdvancedFeaturesTest extends LightJavaCodeInsightFixtureTestCase5 
     }
 
     private void add(String path, String text) {
-        fixture.addFileToProject(path, text);
+        getFixture().addFileToProject(path, text);
     }
 }
