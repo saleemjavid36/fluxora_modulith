@@ -41,13 +41,16 @@ public final class ModulithModuleResolver {
     public List<ModulithModule> resolveModules(@Nullable PsiFile contextFile) {
         String rootPackage = resolveRootPackage(contextFile);
         List<ModulithModule> result = new ArrayList<>();
+
         ModulithSettings settings = ModulithSettings.getInstance(project);
         String strategy = settings.getDetectionStrategy();
 
         if (!rootPackage.isEmpty()) {
             List<PsiDirectory> roots = findDirectoriesForPackage(rootPackage);
+
             for (PsiDirectory rootDirectory : roots) {
-                if (hasApplicationModule(rootDirectory) && containsJavaSource(rootDirectory)) {
+                if (hasApplicationModule(rootDirectory)
+                        && containsJavaSource(rootDirectory)) {
                     result.add(toModule(rootDirectory, rootPackage));
                 }
 
@@ -60,23 +63,115 @@ public final class ModulithModuleResolver {
             }
         }
 
-        // Explicit @ApplicationModule declarations are authoritative even
-        // when the inferred/configured root is missing or the selected
-        // discovery strategy cannot find a module from that root.
+        /*
+         * Generic fallback:
+         *
+         * If there is no configured Spring Boot/Modulith root package,
+         * derive the root from the common package of Java source files.
+         *
+         * Example:
+         *
+         * io.company.beta.BetaService
+         * io.company.gamma.GammaService
+         *
+         * common package = io.company
+         *
+         * Therefore:
+         * io.company.beta   -> module
+         * io.company.gamma  -> module
+         *
+         * No module names are hardcoded.
+         */
+        if (result.isEmpty()
+                && rootPackage.isEmpty()
+                && !ModulithSettings.EXPLICITLY_ANNOTATED.equals(strategy)) {
+
+            String inferredRootPackage = findSourcePackageRoot();
+
+            if (!inferredRootPackage.isEmpty()) {
+                PsiDirectory inferredRoot =
+                        findDirectoryForPackage(inferredRootPackage);
+
+                if (inferredRoot != null) {
+                    collectDirectModules(inferredRoot, result);
+                    collectNestedExplicitModules(inferredRoot, result);
+                }
+            }
+        }
+
+        /*
+         * Explicit @ApplicationModule declarations remain authoritative.
+         */
         if (result.isEmpty()) {
             collectAllExplicitModules(result);
         }
 
+        /*
+         * User-configured additional module packages remain supported.
+         */
         for (String additionalPackage : settings.getAdditionalModulePackages()) {
             for (PsiDirectory directory : findDirectoriesForPackage(additionalPackage)) {
-                if (containsJavaSource(directory)) result.add(toModule(directory, additionalPackage));
+                if (containsJavaSource(directory)) {
+                    result.add(toModule(directory, additionalPackage));
+                }
             }
         }
 
         List<ModulithModule> filtered = deduplicate(result);
-        filtered.removeIf(module -> isExcluded(module.getPackageName(), settings.getExcludedPackagePrefixes()));
-        filtered.sort(Comparator.comparing(ModulithModule::getPackageName));
+
+        filtered.removeIf(module ->
+                isExcluded(
+                        module.getPackageName(),
+                        settings.getExcludedPackagePrefixes()
+                )
+        );
+
+        filtered.sort(
+                Comparator.comparing(ModulithModule::getPackageName)
+        );
+
         return filtered;
+    }
+    @NotNull
+    private String findSourcePackageRoot() {
+        ProjectFileIndex index =
+                ProjectRootManager.getInstance(project).getFileIndex();
+
+        PsiManager manager =
+                PsiManager.getInstance(project);
+
+        List<String> sourcePackages = new ArrayList<>();
+
+        index.iterateContent(file -> {
+            if (!file.isInLocalFileSystem()
+                    || file.isDirectory()
+                    || !index.isInSourceContent(file)
+                    || index.isInTestSourceContent(file)
+                    || !file.getName().endsWith(".java")) {
+                return true;
+            }
+
+            PsiFile psiFile = manager.findFile(file);
+
+            if (psiFile instanceof PsiJavaFile javaFile) {
+                PsiPackageStatement statement =
+                        javaFile.getPackageStatement();
+
+                if (statement != null) {
+                    String packageName =
+                            statement.getPackageName();
+
+                    if (packageName != null
+                            && !packageName.isBlank()) {
+                        sourcePackages.add(packageName);
+                    }
+                }
+            }
+
+            return true;
+        });
+
+        return findCommonPackage(sourcePackages);
     }
 
     private boolean isExcluded(@NotNull String packageName, @NotNull List<String> prefixes) {
@@ -521,7 +616,6 @@ public final class ModulithModuleResolver {
                 common.length;
 
         for (int i = 1; i < packages.size(); i++) {
-
             String[] current =
                     packages.get(i).split("\\.");
 
@@ -532,7 +626,6 @@ public final class ModulithModuleResolver {
                     );
 
             for (int j = 0; j < commonLength; j++) {
-
                 if (!common[j].equals(current[j])) {
                     commonLength = j;
                     break;

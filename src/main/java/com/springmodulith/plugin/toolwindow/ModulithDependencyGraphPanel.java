@@ -7,6 +7,8 @@ import com.springmodulith.plugin.model.ModulithDependencyGraph;
 import com.springmodulith.plugin.model.ModulithModule;
 import org.jetbrains.annotations.NotNull;
 
+import java.awt.Color;
+import java.awt.geom.QuadCurve2D;
 import javax.swing.JPanel;
 import java.awt.BasicStroke;
 import java.awt.Cursor;
@@ -36,6 +38,17 @@ public final class ModulithDependencyGraphPanel extends JPanel {
     private static final int LEGEND_HEIGHT = 34;
     private static final int EMPTY_STATE_WIDTH = 520;
     private static final int EMPTY_STATE_HEIGHT = 180;
+    private static final JBColor CYCLE_COLOR = new JBColor(
+            new Color(0xC98A00),
+            new Color(0xFFB020)
+    );
+
+    private static final JBColor CYCLE_LEGEND_BACKGROUND = new JBColor(
+            new Color(0xFFF3CD),
+            new Color(0x4A3900)
+    );
+
+    private static final int CYCLE_CURVE_OFFSET = 55;
 
     private final Project project;
     private final Map<String, Point> nodePositions = new HashMap<>();
@@ -294,42 +307,161 @@ public final class ModulithDependencyGraphPanel extends JPanel {
         for (ModulithDependencyGraph.ModuleDependency dependency : graph.getDependencies()) {
             Point source = nodePositions.get(dependency.sourcePackage());
             Point target = nodePositions.get(dependency.targetPackage());
-            if (source == null || target == null) continue;
+
+            if (source == null || target == null) {
+                continue;
+            }
 
             boolean highlighted = isDependencyRelatedToSelection(dependency)
                     || dependency == selectedDependency;
+
             boolean dimmed = selectedModule != null && !highlighted;
             boolean cyclic = graph.isCyclicEdge(dependency);
 
             g.setColor(edgeColor(dependency, dimmed, cyclic));
             g.setStroke(edgeStroke(dependency, highlighted, cyclic));
-            drawArrow(g, source, target);
+
+            if (cyclic) {
+                drawCycleArrow(g, dependency);
+            } else {
+                drawArrow(g, source, target);
+            }
+
             drawEdgeLabel(g, dependency, source, target, dimmed);
         }
+    }
+    private void drawCycleArrow(
+            @NotNull Graphics2D g,
+            @NotNull ModulithDependencyGraph.ModuleDependency dependency) {
+
+        Point start = edgeStart(dependency);
+        Point end = edgeEnd(dependency);
+
+        Point control = getCycleControlPoint(dependency, start, end);
+
+        QuadCurve2D curve = new QuadCurve2D.Double(
+                start.x,
+                start.y,
+                control.x,
+                control.y,
+                end.x,
+                end.y
+        );
+
+        g.draw(curve);
+
+        // Use the tangent near the end of the curve for the arrow head.
+        drawArrowHead(g, control, end);
+    }
+    @NotNull
+    private Point getCycleControlPoint(
+            @NotNull ModulithDependencyGraph.ModuleDependency dependency,
+            @NotNull Point start,
+            @NotNull Point end) {
+
+        double dx = end.x - start.x;
+        double dy = end.y - start.y;
+
+        double length = Math.sqrt(dx * dx + dy * dy);
+
+        if (length == 0) {
+            return new Point(
+                    (start.x + end.x) / 2,
+                    (start.y + end.y) / 2
+            );
+        }
+
+        // Perpendicular vector.
+        double normalX = -dy / length;
+        double normalY = dx / length;
+
+        /*
+         * Opposite directions use opposite sides of the connection.
+         *
+         * billing -> payment
+         * payment -> billing
+         *
+         * therefore the two arrows don't overlap.
+         */
+        int direction = dependency.sourcePackage()
+                .compareTo(dependency.targetPackage()) < 0 ? 1 : -1;
+
+        double offset = Math.max(
+                CYCLE_CURVE_OFFSET,
+                Math.min(80, length * 0.25)
+        );
+
+        double centerX = (start.x + end.x) / 2.0;
+        double centerY = (start.y + end.y) / 2.0;
+
+        return new Point(
+                (int) Math.round(centerX + normalX * offset * direction),
+                (int) Math.round(centerY + normalY * offset * direction)
+        );
     }
 
     private java.awt.Color edgeColor(
             @NotNull ModulithDependencyGraph.ModuleDependency dependency,
             boolean dimmed,
             boolean cyclic) {
-        if (dimmed) return JBColor.GRAY;
-        if (dependency.isForbidden()) return JBColor.namedColor("ValidationError.foreground", JBColor.RED);
-        if (cyclic) return JBColor.namedColor("Yellow.foreground", JBColor.ORANGE);
-        if (dependency.isNamedInterface()) return JBColor.namedColor("Green.foreground", JBColor.GREEN);
-        return JBColor.namedColor("Actions.Blue", JBColor.BLUE);
+
+        if (dimmed) {
+            return JBColor.GRAY;
+        }
+
+        if (cyclic) {
+            return CYCLE_COLOR;
+        }
+
+        if (dependency.isForbidden()) {
+            return JBColor.namedColor(
+                    "ValidationError.foreground",
+                    JBColor.RED
+            );
+        }
+
+        if (dependency.isNamedInterface()) {
+            return JBColor.namedColor(
+                    "Green.foreground",
+                    JBColor.GREEN
+            );
+        }
+
+        return JBColor.namedColor(
+                "Actions.Blue",
+                JBColor.BLUE
+        );
     }
 
     private BasicStroke edgeStroke(
             @NotNull ModulithDependencyGraph.ModuleDependency dependency,
             boolean highlighted,
             boolean cyclic) {
-        float width = highlighted ? 2.5f : 1.4f;
+
+        float width = highlighted ? 3.0f : 2.2f;
+
         if (cyclic) {
-            return new BasicStroke(width, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND, 10f, new float[]{8f, 6f}, 0f);
+            return new BasicStroke(
+                    width,
+                    BasicStroke.CAP_ROUND,
+                    BasicStroke.JOIN_ROUND,
+                    10f,
+                    new float[]{10f, 7f},
+                    0f
+            );
         }
+
         if (dependency.isNamedInterface()) {
-            return new BasicStroke(width, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND, 10f, new float[]{5f, 5f}, 0f);
+            return new BasicStroke(
+                    width,
+                    BasicStroke.CAP_ROUND,
+                    BasicStroke.JOIN_ROUND,
+                    10f,
+                    new float[]{5f, 5f},
+                    0f
+            );
         }
+
         return new BasicStroke(width);
     }
 
@@ -354,10 +486,31 @@ public final class ModulithDependencyGraphPanel extends JPanel {
                     : "allowed";
         }
 
-        Point a = center(source);
-        Point b = center(target);
-        int x = (a.x + b.x) / 2;
-        int y = (a.y + b.y) / 2 - 5;
+        Point a = edgeStart(dependency);
+        Point b = edgeEnd(dependency);
+
+        int x;
+        int y;
+
+        if (graph.isCyclicEdge(dependency)) {
+            Point control = getCycleControlPoint(dependency, a, b);
+
+            // Quadratic Bézier midpoint at t = 0.5.
+            x = (int) Math.round(
+                    0.25 * a.x +
+                            0.50 * control.x +
+                            0.25 * b.x
+            );
+
+            y = (int) Math.round(
+                    0.25 * a.y +
+                            0.50 * control.y +
+                            0.25 * b.y
+            ) - 5;
+        } else {
+            x = (a.x + b.x) / 2;
+            y = (a.y + b.y) / 2 - 5;
+        }
 
         FontMetrics metrics = g.getFontMetrics();
         int width = metrics.stringWidth(label) + 10;
@@ -371,24 +524,126 @@ public final class ModulithDependencyGraphPanel extends JPanel {
     private void paintLegend(@NotNull Graphics2D g) {
         int y = Math.max(getHeight() - LEGEND_HEIGHT - 4, 10);
         int x = 12;
-        drawLegendItem(g, x, y, "allowed", JBColor.namedColor("Actions.Blue", JBColor.BLUE), false);
+
+        drawLegendItem(
+                g,
+                x,
+                y,
+                "allowed",
+                JBColor.namedColor("Actions.Blue", JBColor.BLUE),
+                false,
+                false
+        );
+
         x += 90;
-        drawLegendItem(g, x, y, "forbidden", JBColor.namedColor("ValidationError.foreground", JBColor.RED), false);
+
+        drawLegendItem(
+                g,
+                x,
+                y,
+                "forbidden",
+                JBColor.namedColor(
+                        "ValidationError.foreground",
+                        JBColor.RED
+                ),
+                false,
+                false
+        );
+
         x += 105;
-        drawLegendItem(g, x, y, "named interface", JBColor.namedColor("Green.foreground", JBColor.GREEN), true);
+
+        drawLegendItem(
+                g,
+                x,
+                y,
+                "named interface",
+                JBColor.namedColor(
+                        "Green.foreground",
+                        JBColor.GREEN
+                ),
+                true,
+                false
+        );
+
         x += 135;
-        drawLegendItem(g, x, y, "cycle", JBColor.namedColor("Yellow.foreground", JBColor.ORANGE), true);
+
+        boolean cycleDetected = !graph.getCycles().isEmpty();
+
+        drawLegendItem(
+                g,
+                x,
+                y,
+                "cycle",
+                CYCLE_COLOR,
+                true,
+                cycleDetected
+        );
     }
 
-    private void drawLegendItem(@NotNull Graphics2D g, int x, int y, String text, java.awt.Color color, boolean dashed) {
+    private void drawLegendItem(
+            @NotNull Graphics2D g,
+            int x,
+            int y,
+            @NotNull String text,
+            @NotNull java.awt.Color color,
+            boolean dashed,
+            boolean highlighted) {
+
+        Font originalFont = g.getFont();
+
+        FontMetrics metrics = g.getFontMetrics();
+        int textWidth = metrics.stringWidth(text);
+
+        if (highlighted) {
+            int backgroundWidth = textWidth + 46;
+
+            g.setColor(CYCLE_LEGEND_BACKGROUND);
+            g.fillRoundRect(
+                    x - 7,
+                    y - 15,
+                    backgroundWidth,
+                    26,
+                    10,
+                    10
+            );
+        }
+
         g.setColor(color);
-        g.setStroke(dashed
-                ? new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND, 10f, new float[]{5f, 5f}, 0f)
-                : new BasicStroke(2f));
+
+        g.setStroke(
+                dashed
+                        ? new BasicStroke(
+                        highlighted ? 3f : 2f,
+                        BasicStroke.CAP_ROUND,
+                        BasicStroke.JOIN_ROUND,
+                        10f,
+                        new float[]{6f, 5f},
+                        0f
+                )
+                        : new BasicStroke(2f)
+        );
+
         g.drawLine(x, y, x + 24, y);
+
         g.setStroke(new BasicStroke(1f));
-        g.setColor(JBColor.foreground());
-        g.drawString(text, x + 30, y + 4);
+
+        g.setColor(highlighted
+                ? color
+                : JBColor.foreground());
+
+        g.setFont(
+                highlighted
+                        ? originalFont.deriveFont(Font.BOLD)
+                        : originalFont
+        );
+
+        g.drawString(
+                text,
+                x + 30,
+                y + 4
+        );
+
+        g.setFont(originalFont);
     }
 
     private void drawCentered(@NotNull Graphics2D g, @NotNull String text, int x, int baseline, @NotNull FontMetrics metrics) {
