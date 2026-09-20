@@ -472,7 +472,10 @@ public final class ModulithDependencyGraphPanel extends JPanel {
             @NotNull Point target,
             boolean dimmed) {
         String label;
-        if (dependency.isApiViolation()) {
+
+        if (graph.isCyclicEdge(dependency)) {
+            label = "cycle";
+        } else if (dependency.isApiViolation()) {
             label = "API violation";
         } else if (dependency.isNamedInterface()) {
             label = dependency.namedInterface() == null
@@ -531,7 +534,7 @@ public final class ModulithDependencyGraphPanel extends JPanel {
                 y,
                 "allowed",
                 JBColor.namedColor("Actions.Blue", JBColor.BLUE),
-                false,
+                LegendStyle.SOLID,
                 false
         );
 
@@ -546,7 +549,7 @@ public final class ModulithDependencyGraphPanel extends JPanel {
                         "ValidationError.foreground",
                         JBColor.RED
                 ),
-                false,
+                LegendStyle.SOLID,
                 false
         );
 
@@ -561,7 +564,7 @@ public final class ModulithDependencyGraphPanel extends JPanel {
                         "Green.foreground",
                         JBColor.GREEN
                 ),
-                true,
+                LegendStyle.DOTTED,
                 false
         );
 
@@ -575,7 +578,7 @@ public final class ModulithDependencyGraphPanel extends JPanel {
                 y,
                 "cycle",
                 CYCLE_COLOR,
-                true,
+                LegendStyle.DASHED,
                 cycleDetected
         );
     }
@@ -586,12 +589,12 @@ public final class ModulithDependencyGraphPanel extends JPanel {
             int y,
             @NotNull String text,
             @NotNull java.awt.Color color,
-            boolean dashed,
+            @NotNull LegendStyle style,
             boolean highlighted) {
 
         Font originalFont = g.getFont();
-
         FontMetrics metrics = g.getFontMetrics();
+
         int textWidth = metrics.stringWidth(text);
 
         if (highlighted) {
@@ -599,10 +602,10 @@ public final class ModulithDependencyGraphPanel extends JPanel {
 
             g.setColor(CYCLE_LEGEND_BACKGROUND);
             g.fillRoundRect(
-                    x - 7,
-                    y - 15,
+                    x - 8,
+                    y - 16,
                     backgroundWidth,
-                    26,
+                    28,
                     10,
                     10
             );
@@ -610,20 +613,54 @@ public final class ModulithDependencyGraphPanel extends JPanel {
 
         g.setColor(color);
 
-        g.setStroke(
-                dashed
-                        ? new BasicStroke(
-                        highlighted ? 3f : 2f,
+        float width = highlighted ? 3.2f : 2.2f;
+
+        switch (style) {
+            case SOLID -> {
+                g.setStroke(new BasicStroke(
+                        width,
+                        BasicStroke.CAP_ROUND,
+                        BasicStroke.JOIN_ROUND
+                ));
+                g.drawLine(x, y, x + 24, y);
+            }
+
+            case DOTTED -> {
+                g.setStroke(new BasicStroke(
+                        width,
                         BasicStroke.CAP_ROUND,
                         BasicStroke.JOIN_ROUND,
                         10f,
-                        new float[]{6f, 5f},
+                        new float[]{1f, 6f},
                         0f
-                )
-                        : new BasicStroke(2f)
-        );
+                ));
+                g.drawLine(x, y, x + 24, y);
+            }
 
-        g.drawLine(x, y, x + 24, y);
+            case DASHED -> {
+                g.setStroke(new BasicStroke(
+                        width,
+                        BasicStroke.CAP_ROUND,
+                        BasicStroke.JOIN_ROUND,
+                        10f,
+                        new float[]{9f, 5f},
+                        0f
+                ));
+                g.drawLine(x, y, x + 24, y);
+            }
+
+            case DASH_DOT -> {
+                g.setStroke(new BasicStroke(
+                        width,
+                        BasicStroke.CAP_ROUND,
+                        BasicStroke.JOIN_ROUND,
+                        10f,
+                        new float[]{9f, 4f, 2f, 4f},
+                        0f
+                ));
+                g.drawLine(x, y, x + 24, y);
+            }
+        }
 
         g.setStroke(new BasicStroke(1f));
 
@@ -639,11 +676,18 @@ public final class ModulithDependencyGraphPanel extends JPanel {
 
         g.drawString(
                 text,
-                x + 30,
+                x + 32,
                 y + 4
         );
 
         g.setFont(originalFont);
+    }
+
+    private enum LegendStyle {
+        SOLID,
+        DOTTED,
+        DASHED,
+        DASH_DOT
     }
 
     private void drawCentered(@NotNull Graphics2D g, @NotNull String text, int x, int baseline, @NotNull FontMetrics metrics) {

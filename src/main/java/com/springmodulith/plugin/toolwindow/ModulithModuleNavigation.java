@@ -11,6 +11,9 @@ import com.intellij.psi.PsiPackage;
 import com.springmodulith.plugin.model.ModulithDependencyReference;
 import com.springmodulith.plugin.model.ModulithModule;
 import org.jetbrains.annotations.NotNull;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.search.GlobalSearchScope;
+
 
 public final class ModulithModuleNavigation {
 
@@ -64,15 +67,32 @@ public final class ModulithModuleNavigation {
     public static void openQualifiedType(
             @NotNull Project project,
             @NotNull String qualifiedName) {
-        var clazz = JavaPsiFacade.getInstance(project).findClass(
+
+        PsiClass clazz = JavaPsiFacade.getInstance(project).findClass(
                 qualifiedName,
-                com.intellij.psi.search.GlobalSearchScope.projectScope(project)
+                GlobalSearchScope.projectScope(project)
         );
-        VirtualFile virtualFile =
-                clazz.getContainingFile().getVirtualFile();
-        if (clazz != null && clazz.getContainingFile() != null) {
-            new OpenFileDescriptor(project, virtualFile, clazz.getTextOffset()).navigate(true);
+
+        if (clazz == null) {
+            return;
         }
+
+        PsiFile containingFile = clazz.getContainingFile();
+
+        if (containingFile == null
+                || containingFile.getVirtualFile() == null) {
+            return;
+        }
+
+        OpenFileDescriptor descriptor =
+                new OpenFileDescriptor(
+                        project,
+                        containingFile.getVirtualFile(),
+                        clazz.getTextOffset()
+                );
+
+        FileEditorManager.getInstance(project)
+                .openTextEditor(descriptor, true);
     }
 
     private static PsiDirectory findPackageDirectory(

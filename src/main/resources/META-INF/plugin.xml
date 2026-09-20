@@ -24,6 +24,17 @@
                 description="Export the detected Spring Modulith architecture as JSON">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
+        <action id="com.springmodulith.plugin.toggleToolWindow"
+                class="com.springmodulith.plugin.action.ModulithToggleToolWindowAction"
+                text="Toggle Spring Modulith Tool Window"
+                description="Open or close the Spring Modulith tool window">
+
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+
+            <keyboard-shortcut
+                    keymap="$default"
+                    first-keystroke="ctrl shift alt M"/>
+        </action>
     </actions>
     <extensions defaultExtensionNs="com.intellij">
 
