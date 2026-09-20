@@ -1,13 +1,39 @@
-<idea-plugin>
+<idea-plugin
+        url="https://github.com/saleemjavid36/spring_modulithic_Asist"
+>
     <id>com.springmodulith.plugin</id>
     <name>Spring Modulith Assistance</name>
-    <vendor>SpringModulith</vendor>
+    <icon>icon.svg</icon>
+    <vendor
+            url="https://github.com/saleemjavid36"
+            email="saleemjavid360@gmail.com">Fluxora</vendor>
     <description><![CDATA[
-        Community-edition Spring Modulith assistance. Detects application modules from Java package structure,
-        validates @ApplicationModule allowedDependencies, checks closed-module API access,
-        validates named interfaces, provides package-info completion/navigation, event-listener simplification,
-        project-view indicators, and a module overview tool window.
-    ]]></description>
+    Spring Modulith architecture assistance for IntelliJ IDEA.
+
+    <p>
+    Detect modules, analyze module dependencies, enforce allowed dependencies,
+    validate API access, inspect named interfaces, and visualize your
+    application architecture directly in the IDE.
+    </p>
+
+    <p><b>Features</b></p>
+    <ul>
+        <li>Automatic Spring Modulith module detection</li>
+        <li>@ApplicationModule and allowedDependencies support</li>
+        <li>Cross-module dependency inspections</li>
+        <li>Named interface validation</li>
+        <li>Module dependency cycle detection</li>
+        <li>Event listener analysis</li>
+        <li>Architecture verification</li>
+        <li>Dependency graph visualization</li>
+        <li>Project-scoped Modulith configuration</li>
+    </ul>
+
+    <p>
+    Designed to work with Java projects using IntelliJ Platform Java PSI,
+    without requiring JetBrains Ultimate Spring tooling.
+    </p>
+]]></description>
 
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.java</depends>
