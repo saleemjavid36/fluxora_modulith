@@ -17,6 +17,8 @@ import com.springmodulith.plugin.model.NamedInterface;
 import com.springmodulith.plugin.quickfix.AddAllowedDependencyFix;
 import com.springmodulith.plugin.resolver.ModulithModuleResolver;
 import org.jetbrains.annotations.NotNull;
+import com.intellij.codeInspection.ProblemHighlightType;
+import com.intellij.psi.PsiElement;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -85,11 +87,13 @@ public final class ModulithDependencyInspection
         ModulithDependencyAnalysis dependency =
                 analyzer.analyze(reference);
 
-        if (dependency == null || !dependency.isForbidden()) {
+        if (dependency == null
+                || !dependency.isForbidden()) {
             return;
         }
 
-        String message = analyzer.getMessage(dependency);
+        String message =
+                analyzer.getMessage(dependency);
 
         if (message == null) {
             return;
@@ -98,9 +102,17 @@ public final class ModulithDependencyInspection
         LocalQuickFix[] fixes =
                 createQuickFixes(dependency);
 
+        PsiElement nameElement =
+                reference.getReferenceNameElement();
+
+        if (nameElement == null) {
+            return;
+        }
+
         holder.registerProblem(
-                reference.getReferenceNameElement(),
+                nameElement,
                 message,
+                ProblemHighlightType.ERROR,
                 fixes
         );
     }

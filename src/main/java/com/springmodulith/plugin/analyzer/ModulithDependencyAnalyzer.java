@@ -199,6 +199,13 @@ public final class ModulithDependencyAnalyzer {
                 || source.getPackageName().equals(target.getPackageName())) {
             return null;
         }
+        /*
+         * Do not perform dependency analysis unless the source module
+         * explicitly declares allowedDependencies.
+         */
+        if (!source.isAllowedDependenciesConfigured()) {
+            return null;
+        }
 
         String qualifiedType = targetClass.getQualifiedName();
         if (qualifiedType == null || qualifiedType.isEmpty()) {

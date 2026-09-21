@@ -22,6 +22,7 @@ import org.jetbrains.annotations.NotNull;
 import java.util.ArrayList;
 import java.util.List;
 
+
 public final class ModulithAllowedDependencyInspection extends AbstractBaseJavaLocalInspectionTool {
     private static final String APPLICATION_MODULE = ModulithModuleResolver.APPLICATION_MODULE;
     private static final String ALLOWED = "allowedDependencies";
@@ -45,27 +46,83 @@ public final class ModulithAllowedDependencyInspection extends AbstractBaseJavaL
         };
     }
 
-    private void validate(String text, PsiElement element, ProblemsHolder holder, ModulithModuleResolver resolver) {
+    private void validate(
+            String text,
+            PsiElement element,
+            ProblemsHolder holder,
+            ModulithModuleResolver resolver) {
+
         String value = text.trim();
+
+        /*
+         * Empty allowedDependencies means that there is no
+         * explicit dependency restriction.
+         *
+         * Examples:
+         *
+         * allowedDependencies = ""
+         * allowedDependencies = { }
+         */
         if (value.isEmpty()) {
-            holder.registerProblem(element, "Allowed dependency must not be empty");
             return;
         }
-        ModulithModule.DependencyRule rule = ModulithModule.DependencyRule.parse(value);
+
+        ModulithModule.DependencyRule rule =
+                ModulithModule.DependencyRule.parse(value);
+
         if (rule == null) {
-            holder.registerProblem(element, "Malformed Modulith dependency. Use 'module' or 'module :: interface'");
+            holder.registerProblem(
+                    element,
+                    "Malformed Modulith dependency. " +
+                            "Use 'module' or 'module :: interface'"
+            );
             return;
         }
-        PsiJavaFile javaFile = element.getContainingFile() instanceof PsiJavaFile ? (PsiJavaFile) element.getContainingFile() : null;
-        if (javaFile == null) return;
-        List<ModulithModule> modules = resolver.resolveModules(javaFile);
-        ModulithModule target = modules.stream().filter(m -> m.getName().equals(rule.moduleId()) || m.getPackageName().equals(rule.moduleId())).findFirst().orElse(null);
+
+        PsiJavaFile javaFile =
+                element.getContainingFile() instanceof PsiJavaFile
+                        ? (PsiJavaFile) element.getContainingFile()
+                        : null;
+
+        if (javaFile == null) {
+            return;
+        }
+
+        List<ModulithModule> modules =
+                resolver.resolveModules(javaFile);
+
+        ModulithModule target =
+                modules.stream()
+                        .filter(m ->
+                                m.getName().equals(rule.moduleId())
+                                        || m.getPackageName().equals(
+                                        rule.moduleId()
+                                )
+                        )
+                        .findFirst()
+                        .orElse(null);
+
         if (target == null) {
-            holder.registerProblem(element, "Modulith module not found: " + rule.moduleId());
+            holder.registerProblem(
+                    element,
+                    "Modulith module not found: "
+                            + rule.moduleId()
+            );
             return;
         }
-        if (rule.interfaceId() != null && !"*".equals(rule.interfaceId()) && !target.hasNamedInterface(rule.interfaceId())) {
-            holder.registerProblem(element, "Named interface not found in module '" + target.getName() + "': " + rule.interfaceId());
+
+        if (rule.interfaceId() != null
+                && !"*".equals(rule.interfaceId())
+                && !target.hasNamedInterface(
+                rule.interfaceId())) {
+
+            holder.registerProblem(
+                    element,
+                    "Named interface not found in module '"
+                            + target.getName()
+                            + "': "
+                            + rule.interfaceId()
+            );
         }
     }
 

@@ -293,14 +293,44 @@ public final class ModulithModuleResolver {
     }
 
     @NotNull
-    private ModulithModule toModule(@NotNull PsiDirectory directory, @NotNull String packageName) {
-        PsiAnnotation applicationModule = findPackageAnnotation(directory, APPLICATION_MODULE);
-        boolean allowedConfigured = applicationModule != null && applicationModule.findDeclaredAttributeValue(ALLOWED_DEPENDENCIES) != null;
-        Set<String> allowed = applicationModule == null ? Set.of() : readStringAttribute(applicationModule, ALLOWED_DEPENDENCIES);
+    private ModulithModule toModule(
+            @NotNull PsiDirectory directory,
+            @NotNull String packageName) {
+
+        PsiAnnotation applicationModule =
+                findPackageAnnotation(directory, APPLICATION_MODULE);
+
+        Set<String> allowed =
+                applicationModule == null
+                        ? Set.of()
+                        : readStringAttribute(
+                        applicationModule,
+                        ALLOWED_DEPENDENCIES
+                );
+
+        PsiAnnotationMemberValue allowedDependenciesValue =
+                applicationModule == null
+                        ? null
+                        : applicationModule.findDeclaredAttributeValue(
+                        ALLOWED_DEPENDENCIES
+                );
+
+        boolean allowedConfigured =
+                applicationModule != null
+                        && allowedDependenciesValue != null;
+
         boolean open =
                 applicationModule != null
                         && isOpenModule(applicationModule);
-        return new ModulithModule(getModuleName(packageName), packageName, open, allowedConfigured, allowed, collectNamedInterfaces(directory, packageName));
+
+        return new ModulithModule(
+                getModuleName(packageName),
+                packageName,
+                open,
+                allowedConfigured,
+                allowed,
+                collectNamedInterfaces(directory, packageName)
+        );
     }
     private boolean isOpenModule(
             @NotNull PsiAnnotation annotation) {
