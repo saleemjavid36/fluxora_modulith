@@ -148,7 +148,16 @@ public final class ModulithDependencyAnalyzer {
             for (String ruleText : override) {
                 ModulithModule.DependencyRule rule = ModulithModule.DependencyRule.parse(ruleText);
                 if (rule == null || !target.matchesModuleId(rule.moduleId())) continue;
-                if (rule.interfaceId() == null || "*".equals(rule.interfaceId())) return true;
+                if (rule.interfaceId() == null) {
+                    return targetPackage.equals(target.getPackageName());
+                }
+
+                if ("*".equals(rule.interfaceId())) {
+                    return target.findNamedInterfaceForType(
+                            qualifiedType,
+                            targetPackage
+                    ) != null;
+                }
                 NamedInterface namedInterface = target.findNamedInterface(rule.interfaceId());
                 if (namedInterface != null && namedInterface.contains(qualifiedType, targetPackage)) return true;
             }

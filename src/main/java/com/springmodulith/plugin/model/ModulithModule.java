@@ -96,11 +96,27 @@ public final class ModulithModule {
             }
 
             /*
-             * "user" and "user :: *" allow the complete target module.
+             * "student" means the target module's root API.
+             *
+             * Root API visibility is checked separately by
+             * target.exposes(...) in ModulithDependencyAnalyzer.
              */
-            if (rule.interfaceId() == null
-                    || "*".equals(rule.interfaceId())) {
-                return true;
+            if (rule.interfaceId() == null) {
+                return targetPackage.equals(target.getPackageName());
+            }
+
+
+            /*
+             * "student :: *" means all explicitly declared
+             * named interfaces of the target module.
+             *
+             * It does NOT mean the complete module.
+             */
+            if ("*".equals(rule.interfaceId())) {
+                return target.findNamedInterfaceForType(
+                        qualifiedType,
+                        targetPackage
+                ) != null;
             }
         }
 
