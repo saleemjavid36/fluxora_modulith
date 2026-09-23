@@ -76,7 +76,7 @@
                 displayName="Spring Modulith API access"
                 groupName="Spring Modulith"
                 enabledByDefault="true"
-                level="WARNING"
+                level="ERROR"
                 implementationClass="com.springmodulith.plugin.inspection.ModulithApiUsageInspection"/>
 
         <localInspection

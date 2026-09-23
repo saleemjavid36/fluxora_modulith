@@ -18,6 +18,7 @@ import com.springmodulith.plugin.quickfix.ExposePackageAsNamedInterfaceFix;
 import com.springmodulith.plugin.quickfix.MarkClassNamedInterfaceFix;
 import com.springmodulith.plugin.resolver.ModulithModuleResolver;
 import org.jetbrains.annotations.NotNull;
+import com.intellij.codeInspection.ProblemHighlightType;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -201,6 +202,7 @@ public final class ModulithApiUsageInspection
                         + qualifiedName
                         + " from module "
                         + targetModule.getName(),
+                ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
                 fixes
         );
     }

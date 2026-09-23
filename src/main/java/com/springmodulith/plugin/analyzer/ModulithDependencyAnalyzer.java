@@ -141,30 +141,67 @@ public final class ModulithDependencyAnalyzer {
             @NotNull ModulithModule target,
             @NotNull String qualifiedType,
             @NotNull String targetPackage) {
+
         java.util.Set<String> override = ModulithSettings.getInstance(project)
                 .getDependencyOverrideMap()
                 .get(source.getPackageName());
+
         if (override != null) {
             for (String ruleText : override) {
-                ModulithModule.DependencyRule rule = ModulithModule.DependencyRule.parse(ruleText);
-                if (rule == null || !target.matchesModuleId(rule.moduleId())) continue;
-                if (rule.interfaceId() == null) {
-                    return targetPackage.equals(target.getPackageName());
+                ModulithModule.DependencyRule rule =
+                        ModulithModule.DependencyRule.parse(ruleText);
+
+                if (rule == null || !target.matchesModuleId(rule.moduleId())) {
+                    continue;
                 }
 
+                // "student" -> root API only
+                if (rule.interfaceId() == null) {
+                    if (targetPackage.equals(target.getPackageName())) {
+                        return true;
+                    }
+
+                    // This rule did not allow the type.
+                    // Continue checking other allowedDependencies rules.
+                    continue;
+                }
+
+                // "student::*" -> all explicitly declared named interfaces
                 if ("*".equals(rule.interfaceId())) {
-                    return target.findNamedInterfaceForType(
+                    if (target.findNamedInterfaceForType(
                             qualifiedType,
                             targetPackage
-                    ) != null;
+                    ) != null) {
+                        return true;
+                    }
+
+                    // This wildcard rule did not allow the type.
+                    // Continue checking other rules.
+                    continue;
                 }
-                NamedInterface namedInterface = target.findNamedInterface(rule.interfaceId());
-                if (namedInterface != null && namedInterface.contains(qualifiedType, targetPackage)) return true;
+
+                // "student::repository" -> one specific named interface
+                NamedInterface namedInterface =
+                        target.findNamedInterface(rule.interfaceId());
+
+                if (namedInterface != null
+                        && namedInterface.contains(
+                        qualifiedType,
+                        targetPackage
+                )) {
+                    return true;
+                }
             }
+
             return false;
         }
+
         return !source.isAllowedDependenciesConfigured()
-                || source.allowsType(qualifiedType, targetPackage, target);
+                || source.allowsType(
+                qualifiedType,
+                targetPackage,
+                target
+        );
     }
 
     private String referenceKey(@NotNull ModulithDependencyAnalysis analysis) {
