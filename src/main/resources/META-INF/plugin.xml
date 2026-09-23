@@ -131,4 +131,9 @@
                 factoryClass="com.springmodulith.plugin.toolwindow.ModulithToolWindowFactory"/>
 
     </extensions>
+    <projectListeners>
+        <listener
+                topic="com.intellij.openapi.fileEditor.FileEditorManagerListener"
+                class="com.springmodulith.plugin.projectView.ModulithProjectViewNavigationListener"/>
+    </projectListeners>
 </idea-plugin>
