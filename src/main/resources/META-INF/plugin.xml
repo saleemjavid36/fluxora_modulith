@@ -63,6 +63,15 @@
         <annotator
                 language="JAVA"
                 implementationClass="com.springmodulith.plugin.inspection.ModulithBoundaryAnnotator"/>
+        <completion.confidence
+                language="JAVA"
+                implementationClass="com.springmodulith.plugin.codeInsight.ModulithDependencyCompletionConfidence"
+                order="before javaSkipAutopopupInStrings"/>
+        <completion.contributor
+                language="JAVA"
+                implementationClass="com.springmodulith.plugin.codeInsight.ModulithDependencyCompletionContributor"
+                order="first"/>
+
         <localInspection
                 language="JAVA"
                 shortName="ModulithDependency"
@@ -110,10 +119,7 @@
                 instance="com.springmodulith.plugin.configuration.ModulithConfigurable"
                 displayName="Spring Modulith"/>
 
-        <completion.contributor
-                language="JAVA"
-                implementationClass="com.springmodulith.plugin.codeInsight.ModulithDependencyCompletionContributor"
-                order="first"/>
+
 
         <psi.referenceContributor
                 language="JAVA"
