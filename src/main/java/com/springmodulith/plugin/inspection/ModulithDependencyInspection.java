@@ -112,7 +112,7 @@ public final class ModulithDependencyInspection
         holder.registerProblem(
                 nameElement,
                 message,
-                ProblemHighlightType.ERROR,
+                ProblemHighlightType.INFORMATION,
                 fixes
         );
     }

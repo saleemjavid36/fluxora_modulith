@@ -202,7 +202,7 @@ public final class ModulithApiUsageInspection
                         + qualifiedName
                         + " from module "
                         + targetModule.getName(),
-                ProblemHighlightType.GENERIC_ERROR_OR_WARNING,
+                ProblemHighlightType.INFORMATION,
                 fixes
         );
     }

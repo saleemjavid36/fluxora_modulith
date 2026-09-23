@@ -60,7 +60,9 @@
         </action>
     </actions>
     <extensions defaultExtensionNs="com.intellij">
-
+        <annotator
+                language="JAVA"
+                implementationClass="com.springmodulith.plugin.inspection.ModulithBoundaryAnnotator"/>
         <localInspection
                 language="JAVA"
                 shortName="ModulithDependency"
