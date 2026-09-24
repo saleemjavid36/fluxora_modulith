@@ -1,5 +1,7 @@
 package com.springmodulith.plugin.inspection;
 
+import com.intellij.codeInsight.intention.IntentionAction;
+import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.lang.annotation.AnnotationHolder;
 import com.intellij.lang.annotation.Annotator;
 import com.intellij.lang.annotation.HighlightSeverity;
@@ -10,16 +12,19 @@ import com.intellij.openapi.editor.markup.EffectType;
 import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiImportStatement;
 import com.intellij.psi.PsiJavaCodeReferenceElement;
 import com.intellij.psi.PsiJavaFile;
-import com.intellij.psi.PsiImportStatement;
+import com.intellij.psi.PsiClass;
 import com.springmodulith.plugin.analyzer.ModulithDependencyAnalyzer;
 import com.springmodulith.plugin.configuration.ModulithSettings;
 import com.springmodulith.plugin.model.ModulithDependencyAnalysis;
 import com.springmodulith.plugin.model.ModulithModule;
 import com.springmodulith.plugin.model.NamedInterface;
+import com.springmodulith.plugin.quickfix.AddAllowedDependencyFix;
 import com.springmodulith.plugin.resolver.ModulithModuleResolver;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.awt.Color;
 import java.util.Set;
@@ -99,7 +104,7 @@ public final class ModulithBoundaryAnnotator implements Annotator {
                         dependencyViolation
                 );
 
-        holder.newAnnotation(
+        var annotation = holder.newAnnotation(
                         HighlightSeverity.ERROR,
                         message
                 )
@@ -107,8 +112,25 @@ public final class ModulithBoundaryAnnotator implements Annotator {
                 .tooltip(tooltip)
                 .enforcedTextAttributes(
                         createRedUnderlineAttributes()
-                )
-                .create();
+                );
+
+        /*
+         * Add the quick fix directly to the IntelliJ annotation popup.
+         *
+         * This does NOT replace or modify the existing Alt+Enter
+         * quick-fix implementation.
+         */
+        if (dependencyViolation) {
+
+            IntentionAction popupFix =
+                    createAllowedDependencyPopupFix(analysis);
+
+            if (popupFix != null) {
+                annotation.withFix(popupFix);
+            }
+        }
+
+        annotation.create();
     }
 
     private static boolean isAllowedDependency(
@@ -296,6 +318,7 @@ public final class ModulithBoundaryAnnotator implements Annotator {
                             .append(escape(dependency))
                             .append("<br>");
                 }
+
             } else {
 
                 html.append("<br><br>");
@@ -337,9 +360,73 @@ public final class ModulithBoundaryAnnotator implements Annotator {
         return html.toString();
     }
 
+    /**
+     * Creates the quick fix displayed directly inside the
+     * IntelliJ annotation/violation popup.
+     *
+     * Example:
+     *
+     * Add 'user :: repository' as an allowed dependency
+     * of the 'account' module
+     */
+    @Nullable
+    private static IntentionAction createAllowedDependencyPopupFix(
+            @NotNull ModulithDependencyAnalysis analysis) {
+
+        ModulithModule source =
+                analysis.source();
+
+        ModulithModule target =
+                analysis.target();
+
+        PsiClass targetClass =
+                analysis.targetClass();
+
+        if (targetClass == null) {
+            return null;
+        }
+
+        String qualifiedType =
+                targetClass.getQualifiedName();
+
+        if (qualifiedType == null
+                || qualifiedType.isBlank()) {
+            return null;
+        }
+
+        String targetPackage =
+                packageName(targetClass);
+
+        NamedInterface namedInterface =
+                target.findNamedInterfaceForType(
+                        qualifiedType,
+                        targetPackage
+                );
+
+        String dependency =
+                namedInterface == null
+                        ? target.getName()
+                        : target.getName()
+                        + " :: "
+                        + namedInterface.getName();
+
+        String fixName =
+                "Add '"
+                        + dependency
+                        + "' as an allowed dependency of the '"
+                        + source.getName()
+                        + "' module";
+
+        return new AddAllowedDependencyFix(
+                dependency,
+                source.getPackageName(),
+                fixName
+        );
+    }
+
     @NotNull
     private static String packageName(
-            @NotNull com.intellij.psi.PsiClass psiClass) {
+            @NotNull PsiClass psiClass) {
 
         if (psiClass.getContainingFile()
                 instanceof PsiJavaFile javaFile) {
@@ -351,7 +438,9 @@ public final class ModulithBoundaryAnnotator implements Annotator {
     }
 
     @NotNull
-    private static String escape(@NotNull String value) {
+    private static String escape(
+            @NotNull String value) {
+
         return value
                 .replace("&", "&amp;")
                 .replace("<", "&lt;")
