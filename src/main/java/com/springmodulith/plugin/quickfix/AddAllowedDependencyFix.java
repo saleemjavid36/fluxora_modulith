@@ -90,6 +90,11 @@ public final class AddAllowedDependencyFix
         PsiArrayInitializerMemberValue arrayValue =
                 (PsiArrayInitializerMemberValue) value;
 
+        ModulithModule.DependencyRule requested =
+                ModulithModule.DependencyRule.parse(
+                        dependency
+                );
+
         for (PsiLiteralExpression literal :
                 PsiTreeUtil.findChildrenOfType(
                         arrayValue,
@@ -103,18 +108,29 @@ public final class AddAllowedDependencyFix
                 continue;
             }
 
+            String existingDependency =
+                    ((String) literalValue).trim();
+
+            /*
+             * Exact match.
+             */
+            if (dependency.trim().equals(existingDependency)) {
+                return true;
+            }
+
+            /*
+             * Logical Modulith dependency match.
+             */
+            if (requested == null) {
+                continue;
+            }
+
             ModulithModule.DependencyRule existing =
                     ModulithModule.DependencyRule.parse(
-                            (String) literalValue
+                            existingDependency
                     );
 
-            ModulithModule.DependencyRule requested =
-                    ModulithModule.DependencyRule.parse(
-                            dependency
-                    );
-
-            if (existing == null
-                    || requested == null) {
+            if (existing == null) {
                 continue;
             }
 
@@ -123,6 +139,15 @@ public final class AddAllowedDependencyFix
                 continue;
             }
 
+            /*
+             * Root dependency:
+             *
+             * student
+             *
+             * must match only:
+             *
+             * student
+             */
             if (requested.interfaceId() == null) {
 
                 if (existing.interfaceId() == null) {
@@ -132,6 +157,13 @@ public final class AddAllowedDependencyFix
                 continue;
             }
 
+            /*
+             * Named dependency:
+             *
+             * student :: controller
+             *
+             * must match only the same named dependency.
+             */
             if (requested.interfaceId()
                     .equals(existing.interfaceId())) {
 
@@ -185,35 +217,39 @@ public final class AddAllowedDependencyFix
 
                     PsiAnnotation applicationModule =
                             findApplicationModule(packageInfo);
-                    if (applicationModule != null
-                            && applicationModule.isValid()
-                            && dependencyAlreadyConfigured(applicationModule)) {
-
-                        return;
-                    }
 
                     if (applicationModule != null
                             && applicationModule.isValid()) {
+
+                        /*
+                         * FINAL DUPLICATE CHECK
+                         *
+                         * Never modify package-info.java when the
+                         * requested dependency already exists.
+                         */
+                        if (dependencyAlreadyConfigured(applicationModule)) {
+                            return;
+                        }
 
                         addDependencyToAnnotation(
                                 project,
                                 applicationModule
                         );
 
-                    } else {
-
-                        PsiPackageStatement packageStatement =
-                                packageInfo.getPackageStatement();
-
-                        if (packageStatement == null) {
-                            return;
-                        }
-
-                        addApplicationModuleAnnotation(
-                                project,
-                                packageStatement
-                        );
+                        return;
                     }
+
+                    PsiPackageStatement packageStatement =
+                            packageInfo.getPackageStatement();
+
+                    if (packageStatement == null) {
+                        return;
+                    }
+
+                    addApplicationModuleAnnotation(
+                            project,
+                            packageStatement
+                    );
                 });
     }
 
@@ -758,6 +794,11 @@ public final class AddAllowedDependencyFix
     private boolean containsDependencyLiteral(
             @NotNull PsiAnnotationMemberValue value) {
 
+        ModulithModule.DependencyRule requested =
+                ModulithModule.DependencyRule.parse(
+                        dependency
+                );
+
         for (PsiLiteralExpression literal :
                 PsiTreeUtil.findChildrenOfType(
                         value,
@@ -767,7 +808,66 @@ public final class AddAllowedDependencyFix
             Object literalValue =
                     literal.getValue();
 
-            if (dependency.equals(literalValue)) {
+            if (!(literalValue instanceof String)) {
+                continue;
+            }
+
+            String existingDependency =
+                    ((String) literalValue).trim();
+
+            /*
+             * First perform an exact string comparison.
+             *
+             * This handles the normal case:
+             *
+             * "student :: controller"
+             * "student :: controller"
+             */
+            if (dependency.trim().equals(existingDependency)) {
+                return true;
+            }
+
+            /*
+             * Then compare the parsed Modulith rule.
+             *
+             * This protects against formatting differences such as:
+             *
+             * "student::controller"
+             * "student :: controller"
+             *
+             * if DependencyRule.parse() considers them
+             * the same logical dependency.
+             */
+            if (requested == null) {
+                continue;
+            }
+
+            ModulithModule.DependencyRule existing =
+                    ModulithModule.DependencyRule.parse(
+                            existingDependency
+                    );
+
+            if (existing == null) {
+                continue;
+            }
+
+            if (!requested.moduleId()
+                    .equals(existing.moduleId())) {
+                continue;
+            }
+
+            if (requested.interfaceId() == null) {
+
+                if (existing.interfaceId() == null) {
+                    return true;
+                }
+
+                continue;
+            }
+
+            if (requested.interfaceId()
+                    .equals(existing.interfaceId())) {
+
                 return true;
             }
         }
