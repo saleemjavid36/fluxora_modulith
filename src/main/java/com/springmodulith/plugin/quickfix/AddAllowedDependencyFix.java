@@ -219,31 +219,21 @@ public final class AddAllowedDependencyFix
 
     private void addDependencyToAnnotation(
             @NotNull Project project,
-            @NotNull PsiAnnotation applicationModule) {
+            @NotNull PsiAnnotation annotation) {
 
         PsiElementFactory factory =
                 PsiElementFactory.getInstance(project);
 
         PsiAnnotationMemberValue value =
-                applicationModule.findDeclaredAttributeValue(
+                annotation.findDeclaredAttributeValue(
                         "allowedDependencies"
                 );
 
         String annotationText =
-                applicationModule.getText();
+                annotation.getText();
 
         /*
-         * @ApplicationModule without allowedDependencies.
-         *
-         * Example:
-         *
-         * @ApplicationModule
-         *
-         * becomes:
-         *
-         * @ApplicationModule(
-         *     allowedDependencies = {"user :: repository"}
-         * )
+         * allowedDependencies does not exist yet.
          */
         if (value == null) {
 
@@ -269,16 +259,17 @@ public final class AddAllowedDependencyFix
             PsiAnnotation replacement =
                     factory.createAnnotationFromText(
                             newAnnotationText,
-                            applicationModule
+                            annotation
                     );
 
-            applicationModule.replace(replacement);
-
+            annotation.replace(replacement);
             return;
         }
 
         /*
-         * allowedDependencies must be an array.
+         * We only support the normal array form:
+         *
+         * allowedDependencies = { ... }
          */
         if (!(value instanceof PsiArrayInitializerMemberValue)) {
             return;
@@ -288,7 +279,9 @@ public final class AddAllowedDependencyFix
                 (PsiArrayInitializerMemberValue) value;
 
         /*
-         * Already configured.
+         * Safety check:
+         *
+         * Never add the same dependency twice.
          */
         if (containsDependencyLiteral(arrayValue)) {
             return;
@@ -304,27 +297,213 @@ public final class AddAllowedDependencyFix
             return;
         }
 
-        String insertion =
-                arrayValue.getInitializers().length == 0
-                        ? "\""
-                        + dependency
-                        + "\""
-                        : ", \""
-                        + dependency
-                        + "\"";
+        /*
+         * Determine whether the existing array is formatted
+         * across multiple lines.
+         */
+        boolean multiline =
+                valueText.indexOf('\n') >= 0
+                        || valueText.indexOf('\r') >= 0;
 
-        String newValueText =
+        /*
+         * Empty array:
+         *
+         * allowedDependencies = {}
+         */
+        if (arrayValue.getInitializers().length == 0) {
+
+            String newValueText;
+
+            if (multiline) {
+
+                String closingIndent =
+                        getClosingBraceIndent(
+                                valueText,
+                                closingBrace
+                        );
+
+                String elementIndent =
+                        getElementIndent(
+                                valueText,
+                                closingBrace
+                        );
+
+                newValueText =
+                        "{\n"
+                                + elementIndent
+                                + "\""
+                                + dependency
+                                + "\"\n"
+                                + closingIndent
+                                + "}";
+
+            } else {
+
+                newValueText =
+                        "{\""
+                                + dependency
+                                + "\"}";
+            }
+
+            replaceAnnotationArrayValue(
+                    factory,
+                    annotation,
+                    annotationText,
+                    valueText,
+                    newValueText
+            );
+
+            return;
+        }
+
+        /*
+         * Existing dependencies are present.
+         */
+        if (multiline) {
+
+            /*
+             * Example existing value:
+             *
+             * {
+             *     "student :: dto",
+             *     "student"
+             * }
+             *
+             * We want:
+             *
+             * {
+             *     "student :: dto",
+             *     "student",
+             *     "student :: repository"
+             * }
+             */
+
+            String closingIndent =
+                    getClosingBraceIndent(
+                            valueText,
+                            closingBrace
+                    );
+
+            String elementIndent =
+                    getElementIndent(
+                            valueText,
+                            closingBrace
+                    );
+
+            /*
+             * Remove whitespace immediately before the
+             * closing brace.
+             *
+             * This prevents:
+             *
+             * "student"
+             *     ,
+             *
+             * from being generated.
+             */
+            String contentBeforeClosing =
+                    valueText.substring(
+                            0,
+                            closingBrace
+                    );
+
+            int lastNonWhitespace =
+                    findLastNonWhitespace(
+                            contentBeforeClosing
+                    );
+
+            if (lastNonWhitespace < 0) {
+                return;
+            }
+
+            String content =
+                    contentBeforeClosing.substring(
+                            0,
+                            lastNonWhitespace + 1
+                    );
+
+            String newValueText =
+                    content
+                            + ",\n"
+                            + elementIndent
+                            + "\""
+                            + dependency
+                            + "\"\n"
+                            + closingIndent
+                            + "}";
+
+            replaceAnnotationArrayValue(
+                    factory,
+                    annotation,
+                    annotationText,
+                    valueText,
+                    newValueText
+            );
+
+            return;
+        }
+
+        /*
+         * Single-line array:
+         *
+         * allowedDependencies = {"student"}
+         *
+         * becomes:
+         *
+         * allowedDependencies = {
+         *     "student",
+         *     "student :: repository"
+         * }
+         *
+         * Actually, to avoid unnecessarily changing the
+         * user's existing style, keep it single-line:
+         *
+         * allowedDependencies = {"student", "student :: repository"}
+         */
+        String contentBeforeClosing =
                 valueText.substring(
                         0,
                         closingBrace
-                )
-                        + insertion
-                        + valueText.substring(
-                        closingBrace
                 );
 
+        int lastNonWhitespace =
+                findLastNonWhitespace(
+                        contentBeforeClosing
+                );
+
+        if (lastNonWhitespace < 0) {
+            return;
+        }
+
+        String content =
+                contentBeforeClosing.substring(
+                        0,
+                        lastNonWhitespace + 1
+                );
+
+        String newValueText =
+                content
+                        + ", \""
+                        + dependency
+                        + "\"}";
+
+        replaceAnnotationArrayValue(
+                factory,
+                annotation,
+                annotationText,
+                valueText,
+                newValueText
+        );
+    }
+    private static void replaceAnnotationArrayValue(
+            @NotNull PsiElementFactory factory,
+            @NotNull PsiAnnotation annotation,
+            @NotNull String annotationText,
+            @NotNull String oldValueText,
+            @NotNull String newValueText) {
+
         int valueStart =
-                annotationText.indexOf(valueText);
+                annotationText.indexOf(oldValueText);
 
         if (valueStart < 0) {
             return;
@@ -337,18 +516,130 @@ public final class AddAllowedDependencyFix
                 )
                         + newValueText
                         + annotationText.substring(
-                        valueStart + valueText.length()
+                        valueStart + oldValueText.length()
                 );
 
         PsiAnnotation replacement =
                 factory.createAnnotationFromText(
                         newAnnotationText,
-                        applicationModule
+                        annotation
                 );
 
-        applicationModule.replace(replacement);
+        annotation.replace(replacement);
     }
+    private static int findLastNonWhitespace(
+            @NotNull String text) {
 
+        for (int i = text.length() - 1; i >= 0; i--) {
+
+            if (!Character.isWhitespace(
+                    text.charAt(i))) {
+
+                return i;
+            }
+        }
+
+        return -1;
+    }
+    private static String getClosingBraceIndent(
+            @NotNull String valueText,
+            int closingBrace) {
+
+        int lineStart =
+                valueText.lastIndexOf(
+                        '\n',
+                        closingBrace - 1
+                );
+
+        if (lineStart < 0) {
+            return "";
+        }
+
+        int start =
+                lineStart + 1;
+
+        int end =
+                closingBrace;
+
+        String indentation =
+                valueText.substring(
+                        start,
+                        end
+                );
+
+        /*
+         * The text between the last newline and '}'
+         * should normally contain only indentation.
+         */
+        if (indentation.trim().isEmpty()) {
+            return indentation;
+        }
+
+        return "";
+    }
+    private static String getElementIndent(
+            @NotNull String valueText,
+            int closingBrace) {
+
+        /*
+         * Find the line containing the last existing
+         * dependency.
+         */
+        int lastNewLine =
+                valueText.lastIndexOf(
+                        '\n',
+                        closingBrace - 1
+                );
+
+        if (lastNewLine < 0) {
+            return "    ";
+        }
+
+        /*
+         * Find the newline before that line.
+         */
+        int previousNewLine =
+                valueText.lastIndexOf(
+                        '\n',
+                        lastNewLine - 1
+                );
+
+        int lineStart =
+                previousNewLine < 0
+                        ? 0
+                        : previousNewLine + 1;
+
+        /*
+         * Extract indentation from the existing
+         * dependency line.
+         */
+        String line =
+                valueText.substring(
+                        lineStart,
+                        lastNewLine
+                );
+
+        int firstNonWhitespace = 0;
+
+        while (firstNonWhitespace < line.length()
+                && Character.isWhitespace(
+                line.charAt(firstNonWhitespace))) {
+
+            firstNonWhitespace++;
+        }
+
+        if (firstNonWhitespace > 0) {
+            return line.substring(
+                    0,
+                    firstNonWhitespace
+            );
+        }
+
+        /*
+         * Fallback.
+         */
+        return "    ";
+    }
     private static @Nullable PsiJavaFile findPackageInfo(
             @NotNull PsiDirectory directory) {
 
