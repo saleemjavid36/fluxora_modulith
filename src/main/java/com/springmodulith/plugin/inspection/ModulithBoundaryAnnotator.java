@@ -459,7 +459,16 @@ public final class ModulithBoundaryAnnotator implements Annotator {
                 packageName(targetClass);
 
         /*
-         * Find the named interface containing this exact type/package.
+         * ---------------------------------------------------------
+         * CASE 1:
+         * Target type belongs to a named interface.
+         *
+         * Example:
+         *
+         *     student :: repository
+         *     student :: controller
+         *     student :: dto
+         * ---------------------------------------------------------
          */
         NamedInterface namedInterface =
                 target.findNamedInterfaceForType(
@@ -467,50 +476,112 @@ public final class ModulithBoundaryAnnotator implements Annotator {
                         targetPackage
                 );
 
+        if (namedInterface != null) {
+
+            String dependency =
+                    target.getName()
+                            + " :: "
+                            + namedInterface.getName();
+
+            /*
+             * Do not show the quick fix if the dependency
+             * is already configured.
+             */
+            if (hasAllowedDependency(
+                    source,
+                    dependency
+            )) {
+                return null;
+            }
+
+            String fixName =
+                    "Add '"
+                            + dependency
+                            + "' as an allowed dependency of the '"
+                            + source.getName()
+                            + "' module";
+
+            return new AddAllowedDependencyFix(
+                    dependency,
+                    source.getPackageName(),
+                    fixName
+            );
+        }
+
         /*
-         * IMPORTANT:
+         * ---------------------------------------------------------
+         * CASE 2:
+         * Target type belongs directly to the module root package.
          *
-         * If the type is not exposed through a named interface,
-         * do NOT generate:
+         * Example:
+         *
+         *     org.example.final_test.student.StudentService
+         *
+         * Module:
          *
          *     student
          *
-         * The API quick fix should expose the package first.
+         * Dependency:
+         *
+         *     student
+         *
+         * This is the normal Spring Modulith root API dependency.
+         * ---------------------------------------------------------
          */
-        if (namedInterface == null) {
-            return null;
-        }
+        boolean isRootApiType =
+                targetPackage.equals(
+                        target.getPackageName()
+                );
 
-        String dependency =
-                target.getName()
-                        + " :: "
-                        + namedInterface.getName();
+        if (isRootApiType) {
+
+            String dependency =
+                    target.getName();
+
+            /*
+             * Do not offer:
+             *
+             *     Add 'student'
+             *
+             * if it already exists.
+             */
+            if (hasAllowedDependency(
+                    source,
+                    dependency
+            )) {
+                return null;
+            }
+
+            String fixName =
+                    "Add '"
+                            + dependency
+                            + "' as an allowed dependency of the '"
+                            + source.getName()
+                            + "' module";
+
+            return new AddAllowedDependencyFix(
+                    dependency,
+                    source.getPackageName(),
+                    fixName
+            );
+        }
 
         /*
-         * IMPORTANT:
+         * ---------------------------------------------------------
+         * CASE 3:
+         * Internal type which is not exposed through a named
+         * interface and is not part of the module root API.
          *
-         * Do not offer the quick fix when the dependency is
-         * already present in allowedDependencies.
+         * Do NOT suggest:
+         *
+         *     student
+         *
+         * because that would incorrectly grant root API access.
+         *
+         * The API quick fix should handle exposing this type/package.
+         * ---------------------------------------------------------
          */
-        if (hasAllowedDependency(
-                source,
-                dependency
-        )) {
-            return null;
-        }
-
-        String fixName =
-                "Add '"
-                        + dependency
-                        + "' as an allowed dependency of the '"
-                        + source.getName()
-                        + "' module";
-
-        return new AddAllowedDependencyFix(
-                dependency,
-                source.getPackageName(),
-                fixName
-        );
+        return null;
     }
     private static boolean hasAllowedDependency(
             @NotNull ModulithModule source,
