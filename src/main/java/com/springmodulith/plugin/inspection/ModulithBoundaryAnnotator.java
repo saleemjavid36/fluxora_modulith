@@ -22,6 +22,7 @@ import com.springmodulith.plugin.model.ModulithDependencyAnalysis;
 import com.springmodulith.plugin.model.ModulithModule;
 import com.springmodulith.plugin.model.NamedInterface;
 import com.springmodulith.plugin.quickfix.AddAllowedDependencyFix;
+import com.springmodulith.plugin.quickfix.ExposePackageAsNamedInterfaceFix;
 import com.springmodulith.plugin.resolver.ModulithModuleResolver;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -31,6 +32,39 @@ import java.util.Set;
 
 public final class ModulithBoundaryAnnotator implements Annotator {
 
+    @Nullable
+    private static IntentionAction createApiPopupFix(
+            @NotNull ModulithDependencyAnalysis analysis) {
+
+        PsiClass targetClass =
+                analysis.targetClass();
+
+        String qualifiedType =
+                targetClass.getQualifiedName();
+
+        if (qualifiedType == null
+                || qualifiedType.isBlank()) {
+            return null;
+        }
+
+        String targetPackage =
+                packageName(targetClass);
+
+        /*
+         * If the type/package is already exposed, there is no
+         * API exposure quick fix to offer.
+         */
+        if (analysis.target().exposes(
+                qualifiedType,
+                targetPackage
+        )) {
+            return null;
+        }
+
+        return new ExposePackageAsNamedInterfaceFix(
+                targetPackage
+        );
+    }
     @Override
     public void annotate(
             @NotNull PsiElement element,
@@ -115,18 +149,46 @@ public final class ModulithBoundaryAnnotator implements Annotator {
                 );
 
         /*
-         * Add the quick fix directly to the IntelliJ annotation popup.
+         * Add the most appropriate quick fix directly to the
+         * IntelliJ annotation popup.
          *
-         * This does NOT replace or modify the existing Alt+Enter
-         * quick-fix implementation.
+         * API exposure has priority over dependency configuration.
+         *
+         * Example:
+         *
+         * StudentDto is inside:
+         *
+         *     student.dto
+         *
+         * but student.dto is not exposed.
+         *
+         * The correct fix is:
+         *
+         *     Expose package '...student.dto'
+         *     as named interface 'dto'
+         *
+         * NOT:
+         *
+         *     Add 'student' as an allowed dependency
+         *
+         * because 'student' only permits the module root API.
          */
-        if (dependencyViolation) {
+        if (apiViolation) {
 
-            IntentionAction popupFix =
+            IntentionAction apiFix =
+                    createApiPopupFix(analysis);
+
+            if (apiFix != null) {
+                annotation.withFix(apiFix);
+            }
+
+        } else if (dependencyViolation) {
+
+            IntentionAction dependencyFix =
                     createAllowedDependencyPopupFix(analysis);
 
-            if (popupFix != null) {
-                annotation.withFix(popupFix);
+            if (dependencyFix != null) {
+                annotation.withFix(dependencyFix);
             }
         }
 
@@ -364,10 +426,13 @@ public final class ModulithBoundaryAnnotator implements Annotator {
      * Creates the quick fix displayed directly inside the
      * IntelliJ annotation/violation popup.
      *
-     * Example:
+     * This quick fix is only offered when:
      *
-     * Add 'user :: repository' as an allowed dependency
-     * of the 'account' module
+     * 1. The target type belongs to a recognized named interface.
+     * 2. That named-interface dependency is not already configured.
+     *
+     * If the target type is not exposed through a named interface,
+     * the API quick fix is responsible for exposing it.
      */
     @Nullable
     private static IntentionAction createAllowedDependencyPopupFix(
@@ -382,10 +447,6 @@ public final class ModulithBoundaryAnnotator implements Annotator {
         PsiClass targetClass =
                 analysis.targetClass();
 
-        if (targetClass == null) {
-            return null;
-        }
-
         String qualifiedType =
                 targetClass.getQualifiedName();
 
@@ -397,18 +458,46 @@ public final class ModulithBoundaryAnnotator implements Annotator {
         String targetPackage =
                 packageName(targetClass);
 
+        /*
+         * Find the named interface containing this exact type/package.
+         */
         NamedInterface namedInterface =
                 target.findNamedInterfaceForType(
                         qualifiedType,
                         targetPackage
                 );
 
+        /*
+         * IMPORTANT:
+         *
+         * If the type is not exposed through a named interface,
+         * do NOT generate:
+         *
+         *     student
+         *
+         * The API quick fix should expose the package first.
+         */
+        if (namedInterface == null) {
+            return null;
+        }
+
         String dependency =
-                namedInterface == null
-                        ? target.getName()
-                        : target.getName()
+                target.getName()
                         + " :: "
                         + namedInterface.getName();
+
+        /*
+         * IMPORTANT:
+         *
+         * Do not offer the quick fix when the dependency is
+         * already present in allowedDependencies.
+         */
+        if (hasAllowedDependency(
+                source,
+                dependency
+        )) {
+            return null;
+        }
 
         String fixName =
                 "Add '"
@@ -422,6 +511,64 @@ public final class ModulithBoundaryAnnotator implements Annotator {
                 source.getPackageName(),
                 fixName
         );
+    }
+    private static boolean hasAllowedDependency(
+            @NotNull ModulithModule source,
+            @NotNull String dependency) {
+
+        ModulithModule.DependencyRule expected =
+                ModulithModule.DependencyRule.parse(
+                        dependency
+                );
+
+        if (expected == null) {
+            return false;
+        }
+
+        for (String configuredDependency :
+                source.getAllowedDependencies()) {
+
+            ModulithModule.DependencyRule configured =
+                    ModulithModule.DependencyRule.parse(
+                            configuredDependency
+                    );
+
+            if (configured == null) {
+                continue;
+            }
+
+            /*
+             * Module must match.
+             */
+            if (!expected.moduleId()
+                    .equals(configured.moduleId())) {
+                continue;
+            }
+
+            /*
+             * "student" and "student :: repository"
+             * are different rules.
+             */
+            if (expected.interfaceId() == null) {
+
+                if (configured.interfaceId() == null) {
+                    return true;
+                }
+
+                continue;
+            }
+
+            /*
+             * Exact named-interface dependency.
+             */
+            if (expected.interfaceId()
+                    .equals(configured.interfaceId())) {
+
+                return true;
+            }
+        }
+
+        return false;
     }
 
     @NotNull

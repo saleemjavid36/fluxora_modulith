@@ -12,6 +12,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import com.intellij.codeInspection.IntentionAndQuickFixAction;
 import com.intellij.openapi.editor.Editor;
+import com.springmodulith.plugin.model.ModulithModule;
 
 public final class AddAllowedDependencyFix
         extends IntentionAndQuickFixAction {
@@ -74,6 +75,73 @@ public final class AddAllowedDependencyFix
         applyDependencyChange(project);
     }
 
+    private boolean dependencyAlreadyConfigured(
+            @NotNull PsiAnnotation applicationModule) {
+
+        PsiAnnotationMemberValue value =
+                applicationModule.findDeclaredAttributeValue(
+                        "allowedDependencies"
+                );
+
+        if (!(value instanceof PsiArrayInitializerMemberValue)) {
+            return false;
+        }
+
+        PsiArrayInitializerMemberValue arrayValue =
+                (PsiArrayInitializerMemberValue) value;
+
+        for (PsiLiteralExpression literal :
+                PsiTreeUtil.findChildrenOfType(
+                        arrayValue,
+                        PsiLiteralExpression.class
+                )) {
+
+            Object literalValue =
+                    literal.getValue();
+
+            if (!(literalValue instanceof String)) {
+                continue;
+            }
+
+            ModulithModule.DependencyRule existing =
+                    ModulithModule.DependencyRule.parse(
+                            (String) literalValue
+                    );
+
+            ModulithModule.DependencyRule requested =
+                    ModulithModule.DependencyRule.parse(
+                            dependency
+                    );
+
+            if (existing == null
+                    || requested == null) {
+                continue;
+            }
+
+            if (!requested.moduleId()
+                    .equals(existing.moduleId())) {
+                continue;
+            }
+
+            if (requested.interfaceId() == null) {
+
+                if (existing.interfaceId() == null) {
+                    return true;
+                }
+
+                continue;
+            }
+
+            if (requested.interfaceId()
+                    .equals(existing.interfaceId())) {
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private void applyDependencyChange(
             @NotNull Project project) {
 
@@ -117,6 +185,12 @@ public final class AddAllowedDependencyFix
 
                     PsiAnnotation applicationModule =
                             findApplicationModule(packageInfo);
+                    if (applicationModule != null
+                            && applicationModule.isValid()
+                            && dependencyAlreadyConfigured(applicationModule)) {
+
+                        return;
+                    }
 
                     if (applicationModule != null
                             && applicationModule.isValid()) {
