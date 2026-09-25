@@ -204,6 +204,11 @@ public final class ModulithDependencyGraphPanel extends JPanel {
 
             @Override
             public void mouseWheelMoved(java.awt.event.MouseWheelEvent event) {
+                if (event.isShiftDown()) {
+                    scrollHorizontally(event);
+                    return;
+                }
+
                 if (!event.isControlDown()) {
                     return;
                 }
@@ -220,6 +225,34 @@ public final class ModulithDependencyGraphPanel extends JPanel {
         addMouseListener(mouseAdapter);
         addMouseMotionListener(mouseAdapter);
         addMouseWheelListener(mouseAdapter);
+    }
+
+    private void scrollHorizontally(@NotNull java.awt.event.MouseWheelEvent event) {
+        javax.swing.JScrollPane scrollPane =
+                (javax.swing.JScrollPane) SwingUtilities.getAncestorOfClass(
+                        javax.swing.JScrollPane.class,
+                        this
+                );
+
+        if (scrollPane == null) {
+            return;
+        }
+
+        javax.swing.JScrollBar horizontalBar =
+                scrollPane.getHorizontalScrollBar();
+
+        if (!horizontalBar.isVisible()) {
+            return;
+        }
+
+        int direction = event.getWheelRotation();
+        int unit = Math.max(24, horizontalBar.getUnitIncrement());
+        int delta = direction * unit * Math.max(1, event.getScrollAmount());
+        int maximum = horizontalBar.getMaximum() - horizontalBar.getVisibleAmount();
+        int value = Math.max(0, Math.min(maximum, horizontalBar.getValue() + delta));
+
+        horizontalBar.setValue(value);
+        event.consume();
     }
 
     public void setModuleSelectionListener(Consumer<ModulithModule> listener) {

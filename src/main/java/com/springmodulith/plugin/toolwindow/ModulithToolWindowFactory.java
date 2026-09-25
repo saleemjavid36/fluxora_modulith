@@ -20,6 +20,7 @@ import org.jetbrains.annotations.NotNull;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JTabbedPane;
+import javax.swing.event.ChangeListener;
 import javax.swing.JPanel;
 import javax.swing.JSplitPane;
 import java.awt.BorderLayout;
@@ -72,6 +73,18 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
         tabs.addTab("Module Structure", structurePanel);
         tabs.addTab("Verification", verificationPanel);
         root.add(tabs, BorderLayout.CENTER);
+
+        // Zoom controls are meaningful only for the Module Graph tab.
+        ChangeListener tabChangeListener = event -> {
+            boolean graphTabSelected = tabs.getSelectedIndex() == 0;
+            zoomOutButton.setVisible(graphTabSelected);
+            zoomLabelButton.setVisible(graphTabSelected);
+            zoomInButton.setVisible(graphTabSelected);
+            buttons.revalidate();
+            buttons.repaint();
+        };
+        tabs.addChangeListener(tabChangeListener);
+        tabChangeListener.stateChanged(null);
 
         project.getService(ModulithToolWindowController.class).register(tabs, verificationPanel);
 
