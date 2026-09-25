@@ -298,10 +298,16 @@ public final class ModulithStructureTreePanel extends JPanel {
 
         rootNode.removeAllChildren();
 
+        /*
+         * Keep the structure view intentionally close to IntelliJ's
+         * Spring Modulith module structure: modules are the primary
+         * nodes and only their Modulith metadata is shown underneath.
+         * Package/class discovery is deliberately left out of this view;
+         * those details are available from the selected module/details
+         * panels and the graph view.
+         */
         List<ModulithModule> modules =
-                new ArrayList<>(
-                        graph.getModules()
-                );
+                new ArrayList<>(graph.getModules());
 
         modules.sort(
                 Comparator.comparing(
@@ -311,23 +317,22 @@ public final class ModulithStructureTreePanel extends JPanel {
         );
 
         for (ModulithModule module : modules) {
-
             DefaultMutableTreeNode moduleNode =
                     new DefaultMutableTreeNode(
                             new ModuleNode(module)
                     );
 
             rootNode.add(moduleNode);
-
-            buildModuleTree(
-                    moduleNode,
-                    module
-            );
+            buildModuleTree(moduleNode, module);
         }
 
         treeModel.reload();
 
-        structureTree.expandRow(0);
+        // IntelliJ's structure presentation keeps the useful metadata visible
+        // without forcing the user to manually expand every module.
+        for (int row = 0; row < structureTree.getRowCount(); row++) {
+            structureTree.expandRow(row);
+        }
 
         showEmptyDetails();
     }
@@ -343,23 +348,48 @@ public final class ModulithStructureTreePanel extends JPanel {
             @NotNull ModulithModule module) {
 
         /*
-         * Package hierarchy
+         * Module id
          */
-        DefaultMutableTreeNode packageRoot =
+        moduleNode.add(
                 new DefaultMutableTreeNode(
-                        new PackageNode(
-                                module.getPackageName(),
-                                module.getPackageName()
+                        new ModuleIdNode(module.getName(), module)
+                )
+        );
+
+        /*
+         * Allowed dependencies
+         */
+        DefaultMutableTreeNode allowedDependenciesNode =
+                new DefaultMutableTreeNode(
+                        new CategoryNode(
+                                "Allowed Dependencies",
+                                CategoryType.ALLOWED_DEPENDENCIES,
+                                module
                         )
                 );
 
-        moduleNode.add(packageRoot);
+        moduleNode.add(allowedDependenciesNode);
 
-        buildPackageTree(
-                packageRoot,
-                module.getPackageName(),
-                module
-        );
+        List<String> allowedDependencies =
+                new ArrayList<>(module.getAllowedDependencies());
+
+        allowedDependencies.sort(String.CASE_INSENSITIVE_ORDER);
+
+        if (allowedDependencies.isEmpty()) {
+            allowedDependenciesNode.add(
+                    new DefaultMutableTreeNode(
+                            new EmptyNode("None")
+                    )
+            );
+        } else {
+            for (String dependency : allowedDependencies) {
+                allowedDependenciesNode.add(
+                        new DefaultMutableTreeNode(
+                                new AllowedDependencyNode(dependency, module)
+                        )
+                );
+            }
+        }
 
         /*
          * Named interfaces
@@ -375,233 +405,47 @@ public final class ModulithStructureTreePanel extends JPanel {
 
         moduleNode.add(interfacesNode);
 
-        for (NamedInterface namedInterface :
-                module.getNamedInterfaces()) {
+        List<NamedInterface> namedInterfaces =
+                new ArrayList<>(module.getNamedInterfaces());
 
-            DefaultMutableTreeNode interfaceNode =
-                    new DefaultMutableTreeNode(
-                            new NamedInterfaceNode(
-                                    namedInterface,
-                                    module
-                            )
-                    );
-
-            interfacesNode.add(interfaceNode);
-
-            for (String typeName :
-                    namedInterface.getTypeNames()) {
-
-                interfaceNode.add(
-                        new DefaultMutableTreeNode(
-                                new TypeNode(
-                                        typeName,
-                                        module
-                                )
-                        )
-                );
-            }
-        }
-
-        /*
-         * Outgoing dependencies
-         */
-        DefaultMutableTreeNode outgoingNode =
-                new DefaultMutableTreeNode(
-                        new CategoryNode(
-                                "Outgoing Dependencies",
-                                CategoryType.OUTGOING,
-                                module
-                        )
-                );
-
-        moduleNode.add(outgoingNode);
-
-        for (ModulithDependencyGraph.ModuleDependency dependency :
-                graph.getOutgoingDependencies(module)) {
-
-            ModulithModule target =
-                    findModule(
-                            dependency.targetPackage()
-                    );
-
-            if (target == null) {
-                continue;
-            }
-
-            outgoingNode.add(
-                    new DefaultMutableTreeNode(
-                            new DependencyNode(
-                                    module,
-                                    target,
-                                    dependency
-                            )
-                    )
-            );
-        }
-
-        /*
-         * Incoming dependencies
-         */
-        DefaultMutableTreeNode incomingNode =
-                new DefaultMutableTreeNode(
-                        new CategoryNode(
-                                "Incoming Dependencies",
-                                CategoryType.INCOMING,
-                                module
-                        )
-                );
-
-        moduleNode.add(incomingNode);
-
-        for (ModulithDependencyGraph.ModuleDependency dependency :
-                graph.getIncomingDependencies(module)) {
-
-            ModulithModule source =
-                    findModule(
-                            dependency.sourcePackage()
-                    );
-
-            if (source == null) {
-                continue;
-            }
-
-            incomingNode.add(
-                    new DefaultMutableTreeNode(
-                            new DependencyNode(
-                                    source,
-                                    module,
-                                    dependency
-                            )
-                    )
-            );
-        }
-    }
-
-    /*
-     * =============================================================
-     * PACKAGE TREE
-     * =============================================================
-     */
-
-    private void buildPackageTree(
-            @NotNull DefaultMutableTreeNode parentNode,
-            @NotNull String packageName,
-            @NotNull ModulithModule module) {
-
-        PsiPackage psiPackage =
-                JavaPsiFacade.getInstance(project)
-                        .findPackage(packageName);
-
-        if (psiPackage == null) {
-            return;
-        }
-
-        GlobalSearchScope scope =
-                GlobalSearchScope.projectScope(project);
-
-        /*
-         * Classes directly inside this package
-         */
-        PsiClass[] classes =
-                psiPackage.getClasses(scope);
-
-        List<PsiClass> sortedClasses =
-                new ArrayList<>(
-                        List.of(classes)
-                );
-
-        sortedClasses.sort(
+        namedInterfaces.sort(
                 Comparator.comparing(
-                        clazz -> {
-
-                            String name =
-                                    clazz.getQualifiedName();
-
-                            return name == null
-                                    ? clazz.getName()
-                                    : name;
-
-                        },
-                        Comparator.nullsLast(
-                                String.CASE_INSENSITIVE_ORDER
-                        )
-                )
-        );
-
-        for (PsiClass clazz :
-                sortedClasses) {
-
-            if (clazz.getQualifiedName() == null) {
-                continue;
-            }
-
-            parentNode.add(
-                    new DefaultMutableTreeNode(
-                            new TypeNode(
-                                    clazz.getQualifiedName(),
-                                    module
-                            )
-                    )
-            );
-        }
-
-        /*
-         * Child packages
-         */
-        PsiPackage[] subPackages =
-                psiPackage.getSubPackages(scope);
-
-        List<PsiPackage> sortedPackages =
-                new ArrayList<>(
-                        List.of(subPackages)
-                );
-
-        sortedPackages.sort(
-                Comparator.comparing(
-                        PsiPackage::getQualifiedName,
+                        NamedInterface::getName,
                         String.CASE_INSENSITIVE_ORDER
                 )
         );
 
-        for (PsiPackage child :
-                sortedPackages) {
-
-            String childName =
-                    child.getQualifiedName();
-
-            if (childName == null) {
-                continue;
-            }
-
-            /*
-             * Do not walk into another Modulith module.
-             */
-            ModulithModule childModule =
-                    findModuleForPackage(
-                            childName
-                    );
-
-            if (childModule != null
-                    && childModule != module) {
-
-                continue;
-            }
-
-            DefaultMutableTreeNode childNode =
+        if (namedInterfaces.isEmpty()) {
+            interfacesNode.add(
                     new DefaultMutableTreeNode(
-                            new PackageNode(
-                                    childName,
-                                    childName
+                            new EmptyNode("None")
+                    )
+            );
+        } else {
+            for (NamedInterface namedInterface : namedInterfaces) {
+                DefaultMutableTreeNode interfaceNode =
+                        new DefaultMutableTreeNode(
+                                new NamedInterfaceNode(
+                                        namedInterface,
+                                        module
+                                )
+                        );
+
+                interfacesNode.add(interfaceNode);
+
+                List<String> typeNames =
+                        new ArrayList<>(namedInterface.getTypeNames());
+
+                typeNames.sort(String.CASE_INSENSITIVE_ORDER);
+
+                for (String typeName : typeNames) {
+                    interfaceNode.add(
+                            new DefaultMutableTreeNode(
+                                    new TypeNode(typeName, module)
                             )
                     );
-
-            parentNode.add(childNode);
-
-            buildPackageTree(
-                    childNode,
-                    childName,
-                    module
-            );
+                }
+            }
         }
     }
 
@@ -671,6 +515,18 @@ public final class ModulithStructureTreePanel extends JPanel {
             showModuleDetails(
                     node.module()
             );
+
+        } else if (nodeObject instanceof ModuleIdNode node) {
+
+            showModuleDetails(node.module());
+
+        } else if (nodeObject instanceof AllowedDependencyNode node) {
+
+            showModuleDetails(node.module());
+
+        } else if (nodeObject instanceof EmptyNode) {
+
+            // Keep the current details panel unchanged for placeholder rows.
 
         } else if (nodeObject instanceof PackageNode node) {
 
@@ -1327,6 +1183,16 @@ public final class ModulithStructureTreePanel extends JPanel {
 
         switch (node.type()) {
 
+            case ALLOWED_DEPENDENCIES -> {
+
+                addValue(
+                        content,
+                        null,
+                        "Dependencies explicitly allowed from this module.",
+                        MUTED
+                );
+            }
+
             case NAMED_INTERFACES -> {
 
                 addValue(
@@ -1829,12 +1695,8 @@ public final class ModulithStructureTreePanel extends JPanel {
 
                 setText(
                         moduleNode.module().getName()
-                                + "    "
-                                + (
-                                moduleNode.module().isOpen()
-                                        ? "OPEN"
-                                        : "CLOSED"
-                        )
+                                + "  "
+                                + moduleNode.module().getPackageName()
                 );
 
                 component.setFont(
@@ -1847,7 +1709,31 @@ public final class ModulithStructureTreePanel extends JPanel {
                 setForeground(
                         selected
                                 ? getTextSelectionColor()
-                                : ACCENT
+                                : UIUtil.getLabelForeground()
+                );
+
+            } else if (object instanceof ModuleIdNode) {
+
+                setForeground(
+                        selected
+                                ? getTextSelectionColor()
+                                : MUTED
+                );
+
+            } else if (object instanceof AllowedDependencyNode) {
+
+                setForeground(
+                        selected
+                                ? getTextSelectionColor()
+                                : UIUtil.getLabelForeground()
+                );
+
+            } else if (object instanceof EmptyNode) {
+
+                setForeground(
+                        selected
+                                ? getTextSelectionColor()
+                                : MUTED
                 );
 
             } else if (object instanceof PackageNode) {
@@ -1859,6 +1745,12 @@ public final class ModulithStructureTreePanel extends JPanel {
                 );
 
             } else if (object instanceof NamedInterfaceNode) {
+
+                setText(
+                        ((NamedInterfaceNode) object).namedInterface().getName()
+                                + "  "
+                                + ((NamedInterfaceNode) object).namedInterface().getPackageName()
+                );
 
                 setForeground(
                         selected
@@ -1927,6 +1819,35 @@ public final class ModulithStructureTreePanel extends JPanel {
 
     private record ModuleNode(
             ModulithModule module) {
+    }
+
+    private record ModuleIdNode(
+            String id,
+            ModulithModule module) {
+
+        @Override
+        public String toString() {
+            return "Id: " + id;
+        }
+    }
+
+    private record AllowedDependencyNode(
+            String dependency,
+            ModulithModule module) {
+
+        @Override
+        public String toString() {
+            return dependency;
+        }
+    }
+
+    private record EmptyNode(
+            String text) {
+
+        @Override
+        public String toString() {
+            return text;
+        }
     }
 
     private record PackageNode(
@@ -2007,6 +1928,10 @@ public final class ModulithStructureTreePanel extends JPanel {
     }
 
     private enum CategoryType {
+
+        ALLOWED_DEPENDENCIES(
+                "Allowed Dependencies"
+        ),
 
         NAMED_INTERFACES(
                 "Named Interfaces"
