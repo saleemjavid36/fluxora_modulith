@@ -1237,39 +1237,29 @@ public final class ModulithStructureTreePanel extends JPanel {
 
     private void showEmptyDetails() {
 
-        JPanel panel =
-                new JPanel(
-                        new BorderLayout()
-                );
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(JBUI.Borders.empty(28));
+        panel.setOpaque(false);
 
-        panel.setBorder(
-                JBUI.Borders.empty(24)
-        );
+        JPanel emptyCard = new JPanel();
+        emptyCard.setOpaque(false);
+        emptyCard.setLayout(new BoxLayout(emptyCard, BoxLayout.Y_AXIS));
+        emptyCard.setBorder(JBUI.Borders.empty(22));
 
-        JBLabel title =
-                new JBLabel(
-                        "No element selected"
-                );
+        JBLabel title = new JBLabel("No element selected");
+        title.setAlignmentX(Component.CENTER_ALIGNMENT);
+        title.setFont(title.getFont().deriveFont(Font.BOLD, 18f));
+        title.setForeground(UIUtil.getLabelForeground());
 
-        title.setHorizontalAlignment(
-                SwingConstants.CENTER
-        );
+        JBLabel hint = new JBLabel("Select a module or item from the structure tree");
+        hint.setAlignmentX(Component.CENTER_ALIGNMENT);
+        hint.setBorder(JBUI.Borders.emptyTop(7));
+        hint.setFont(hint.getFont().deriveFont(Font.PLAIN, 12f));
+        hint.setForeground(MUTED);
 
-        title.setFont(
-                title.getFont().deriveFont(
-                        Font.BOLD,
-                        18f
-                )
-        );
-
-        title.setForeground(
-                MUTED
-        );
-
-        panel.add(
-                title,
-                BorderLayout.CENTER
-        );
+        emptyCard.add(title);
+        emptyCard.add(hint);
+        panel.add(emptyCard, BorderLayout.NORTH);
 
         setDetailsContent(panel);
     }
@@ -1281,21 +1271,10 @@ public final class ModulithStructureTreePanel extends JPanel {
      */
 
     private JPanel createDetailsContainer() {
-
-        JPanel panel =
-                new JPanel();
-
-        panel.setLayout(
-                new BoxLayout(
-                        panel,
-                        BoxLayout.Y_AXIS
-                )
-        );
-
-        panel.setBorder(
-                JBUI.Borders.empty(18)
-        );
-
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setBorder(JBUI.Borders.empty(18, 18, 24, 18));
+        panel.setOpaque(false);
         return panel;
     }
 
@@ -1303,98 +1282,74 @@ public final class ModulithStructureTreePanel extends JPanel {
             @NotNull JPanel panel,
             @NotNull String text) {
 
-        JBLabel label =
-                new JBLabel(text);
+        JPanel header = new JPanel(new BorderLayout(12, 0));
+        header.setOpaque(false);
+        header.setBorder(JBUI.Borders.emptyBottom(8));
+        header.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        label.setFont(
-                label.getFont().deriveFont(
-                        Font.BOLD,
-                        20f
-                )
-        );
+        JPanel accent = new JPanel();
+        accent.setBackground(ACCENT);
+        accent.setPreferredSize(new Dimension(3, 34));
+        accent.setMinimumSize(new Dimension(3, 34));
+        accent.setMaximumSize(new Dimension(3, 34));
 
-        label.setForeground(
-                ACCENT
-        );
+        JBLabel label = new JBLabel(text);
+        label.setFont(label.getFont().deriveFont(Font.BOLD, 20f));
+        label.setForeground(UIUtil.getLabelForeground());
 
-        label.setBorder(
-                JBUI.Borders.emptyBottom(4)
-        );
-
-        panel.add(label);
+        header.add(accent, BorderLayout.WEST);
+        header.add(label, BorderLayout.CENTER);
+        panel.add(header);
     }
 
     private void addSubtitle(
             @NotNull JPanel panel,
             @NotNull String text) {
 
-        JBLabel label =
-                new JBLabel(text);
-
-        label.setFont(
-                label.getFont().deriveFont(
-                        Font.PLAIN,
-                        12f
-                )
-        );
-
-        label.setForeground(
-                MUTED
-        );
-
+        JBLabel label = new JBLabel(wrapText(text, 390));
+        label.setFont(label.getFont().deriveFont(Font.PLAIN, 12f));
+        label.setForeground(MUTED);
+        label.setBorder(JBUI.Borders.emptyLeft(15));
+        label.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.add(label);
     }
 
-    private void addSeparator(
-            @NotNull JPanel panel) {
-
-        panel.add(
-                Box.createVerticalStrut(12)
-        );
+    private void addSeparator(@NotNull JPanel panel) {
+        panel.add(Box.createVerticalStrut(14));
 
         JPanel separator = new JPanel();
-
-        separator.setMaximumSize(
-                new Dimension(
-                        Integer.MAX_VALUE,
-                        1
-                )
-        );
-
-        separator.setBackground(
-                PANEL_BORDER
-        );
-
+        separator.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+        separator.setBackground(PANEL_BORDER);
+        separator.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.add(separator);
 
-        panel.add(
-                Box.createVerticalStrut(6)
-        );
+        panel.add(Box.createVerticalStrut(4));
     }
 
     private void addSectionTitle(
             @NotNull JPanel panel,
             @NotNull String title) {
 
-        panel.add(
-                Box.createVerticalStrut(14)
-        );
+        panel.add(Box.createVerticalStrut(12));
 
-        JBLabel label =
-                new JBLabel(title);
+        JPanel header = new JPanel(new BorderLayout(8, 0));
+        header.setOpaque(false);
+        header.setAlignmentX(Component.LEFT_ALIGNMENT);
+        header.setBorder(JBUI.Borders.empty(5, 0, 4, 0));
 
-        label.setFont(
-                label.getFont().deriveFont(
-                        Font.BOLD,
-                        13f
-                )
-        );
+        JPanel marker = new JPanel();
+        marker.setBackground(ACCENT);
+        marker.setPreferredSize(new Dimension(3, 16));
+        marker.setMinimumSize(new Dimension(3, 16));
+        marker.setMaximumSize(new Dimension(3, 16));
 
-        label.setForeground(
-                UIUtil.getLabelForeground()
-        );
+        JBLabel label = new JBLabel(title);
+        label.setFont(label.getFont().deriveFont(Font.BOLD, 13f));
+        label.setForeground(UIUtil.getLabelForeground());
 
-        panel.add(label);
+        header.add(marker, BorderLayout.WEST);
+        header.add(label, BorderLayout.CENTER);
+        panel.add(header);
     }
 
     private void addValue(
@@ -1403,66 +1358,57 @@ public final class ModulithStructureTreePanel extends JPanel {
             @NotNull String value,
             @NotNull Color color) {
 
-        JPanel row =
-                new JPanel(
-                        new BorderLayout()
-                );
-
-        row.setOpaque(false);
-
-        row.setBorder(
-                JBUI.Borders.empty(
-                        3,
-                        0
-                )
-        );
+        JPanel row = new JPanel(new BorderLayout(12, 0));
+        row.setOpaque(true);
+        row.setBackground(UIUtil.getPanelBackground());
+        row.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(PANEL_BORDER),
+                JBUI.Borders.empty(7, 9)
+        ));
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         if (label != null) {
-
-            JBLabel labelComponent =
-                    new JBLabel(
-                            label
-                                    + ": "
-                    );
-
-            labelComponent.setForeground(
-                    MUTED
-            );
-
-            row.add(
-                    labelComponent,
-                    BorderLayout.WEST
-            );
+            JBLabel labelComponent = new JBLabel(label);
+            labelComponent.setForeground(MUTED);
+            labelComponent.setFont(labelComponent.getFont().deriveFont(Font.PLAIN, 11.5f));
+            labelComponent.setPreferredSize(new Dimension(108, 22));
+            row.add(labelComponent, BorderLayout.WEST);
         }
 
-        JBLabel valueComponent =
-                new JBLabel(value);
-
+        JBLabel valueComponent = new JBLabel(wrapText(value, 340));
         valueComponent.setForeground(color);
-
-        row.add(
-                valueComponent,
-                BorderLayout.CENTER
-        );
+        valueComponent.setFont(valueComponent.getFont().deriveFont(Font.PLAIN, 12f));
+        row.add(valueComponent, BorderLayout.CENTER);
 
         panel.add(row);
+        panel.add(Box.createVerticalStrut(5));
     }
 
-    private void setDetailsContent(
-            @NotNull JPanel content) {
+    private String wrapText(@NotNull String text, int width) {
+        return "<html><body style='width:" + width + "px'>"
+                + escapeHtml(text)
+                + "</body></html>";
+    }
 
+    private String escapeHtml(@NotNull String value) {
+        return value
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;");
+    }
+
+    private void setDetailsContent(@NotNull JPanel content) {
         detailsPanel.removeAll();
 
-        JScrollPane scrollPane =
-                new JBScrollPane(content);
-
+        JScrollPane scrollPane = new JBScrollPane(content);
         scrollPane.setBorder(null);
+        scrollPane.setOpaque(false);
+        scrollPane.getViewport().setOpaque(false);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(14);
+        scrollPane.getHorizontalScrollBar().setUnitIncrement(14);
 
-        detailsPanel.add(
-                scrollPane,
-                BorderLayout.CENTER
-        );
-
+        detailsPanel.add(scrollPane, BorderLayout.CENTER);
         detailsPanel.revalidate();
         detailsPanel.repaint();
     }
