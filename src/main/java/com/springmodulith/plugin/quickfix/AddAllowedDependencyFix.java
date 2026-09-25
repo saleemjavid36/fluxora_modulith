@@ -273,6 +273,19 @@ public final class AddAllowedDependencyFix
          */
         if (value == null) {
 
+            /*
+             * The attribute may exist in the source text but IntelliJ
+             * may not be able to build a PSI value when the array is
+             * malformed (for example, the closing '} ' was removed).
+             * Repair that source form instead of creating a second
+             * allowedDependencies attribute.
+             */
+            if (annotationText.contains("allowedDependencies")) {
+                if (repairMalformedAllowedDependencies(project, annotation)) {
+                    return;
+                }
+            }
+
             int closeParen =
                     annotationText.lastIndexOf(')');
 
@@ -303,11 +316,18 @@ public final class AddAllowedDependencyFix
         }
 
         /*
-         * We only support the normal array form:
-         *
-         * allowedDependencies = { ... }
+         * If IntelliJ could not build a normal PSI array because
+         * the user has accidentally removed the closing '}',
+         * repair the malformed allowedDependencies declaration
+         * before doing the normal dependency insertion.
          */
         if (!(value instanceof PsiArrayInitializerMemberValue)) {
+
+            repairMalformedAllowedDependencies(
+                    project,
+                    annotation
+            );
+
             return;
         }
 
@@ -330,6 +350,16 @@ public final class AddAllowedDependencyFix
                 valueText.lastIndexOf('}');
 
         if (closingBrace < 0) {
+            /*
+             * PSI can still expose an array value even though the
+             * source is missing its closing brace. Repair the actual
+             * source text and add the requested dependency in the same
+             * operation.
+             */
+            repairMalformedAllowedDependencies(
+                    project,
+                    annotation
+            );
             return;
         }
 
@@ -690,6 +720,63 @@ public final class AddAllowedDependencyFix
 
         return null;
     }
+    private static String extractLeadingWhitespace(
+            @NotNull String line) {
+
+        int index = 0;
+
+        while (index < line.length()
+                && Character.isWhitespace(line.charAt(index))) {
+
+            index++;
+        }
+
+        return line.substring(0, index);
+    }
+
+    private static String findDependencyIndentation(
+            @NotNull String content) {
+
+        String[] lines = content.split("\\R", -1);
+
+        /*
+         * Find the indentation of the last non-empty line
+         * containing an allowed dependency.
+         */
+        for (int i = lines.length - 1; i >= 0; i--) {
+
+            String line = lines[i];
+
+            if (line.trim().isEmpty()) {
+                continue;
+            }
+
+            String trimmed = line.trim();
+
+            /*
+             * Dependency entries normally look like:
+             *
+             * "student :: repository"
+             * "student"
+             */
+            if (trimmed.startsWith("\"")
+                    || trimmed.endsWith("\",")
+                    || trimmed.endsWith("\"")) {
+
+                String indentation =
+                        extractLeadingWhitespace(line);
+
+                if (!indentation.isEmpty()) {
+                    return indentation;
+                }
+            }
+        }
+
+        /*
+         * Fallback used when no dependency line can be found.
+         */
+        return "    ";
+    }
 
     private void createPackageInfo(
             @NotNull Project project,
@@ -789,6 +876,336 @@ public final class AddAllowedDependencyFix
                     packageStatement.getFirstChild()
             );
         }
+    }
+    private boolean repairMalformedAllowedDependencies(
+            @NotNull Project project,
+            @NotNull PsiAnnotation annotation) {
+
+        String annotationText = annotation.getText();
+
+        int allowedDependenciesIndex =
+                annotationText.indexOf("allowedDependencies");
+
+        if (allowedDependenciesIndex < 0) {
+            return false;
+        }
+
+        int openingBrace =
+                annotationText.indexOf(
+                        '{',
+                        allowedDependenciesIndex
+                );
+
+        if (openingBrace < 0) {
+            return false;
+        }
+
+        /*
+         * Find a real closing brace while ignoring braces
+         * inside string literals.
+         */
+        int closingBrace =
+                findClosingBrace(
+                        annotationText,
+                        openingBrace
+                );
+
+        /*
+         * A valid closing brace already exists.
+         * Let the normal existing logic handle it.
+         */
+        if (closingBrace >= 0) {
+            return false;
+        }
+
+        /*
+         * The allowedDependencies array is malformed:
+         *
+         * allowedDependencies = {
+         *     "student :: repository"
+         * )
+         *
+         * We need to repair it and add the requested dependency.
+         */
+
+        int closingParen =
+                annotationText.lastIndexOf(')');
+
+        if (closingParen < 0
+                || closingParen <= openingBrace) {
+
+            return false;
+        }
+
+        String content =
+                annotationText.substring(
+                        openingBrace + 1,
+                        closingParen
+                );
+
+        /*
+         * Check whether the dependency already exists
+         * even though the annotation is syntactically broken.
+         */
+        if (containsDependencyText(content)) {
+
+            String repairedText =
+                    annotationText.substring(
+                            0,
+                            closingParen
+                    )
+                            + "\n}"
+                            + annotationText.substring(
+                            closingParen
+                    );
+
+            PsiElementFactory factory =
+                    PsiElementFactory.getInstance(project);
+
+            PsiAnnotation replacement =
+                    factory.createAnnotationFromText(
+                            repairedText,
+                            annotation
+                    );
+
+            annotation.replace(replacement);
+
+            return true;
+        }
+
+        /*
+         * Determine whether there is already an actual
+         * dependency inside the array.
+         */
+        boolean hasExistingDependency =
+                !content.trim().isEmpty();
+
+        /*
+         * Preserve the user's existing formatting as much
+         * as possible.
+         */
+        boolean multiline =
+                content.contains("\n")
+                        || content.contains("\r");
+
+        String newContent;
+
+        if (multiline) {
+
+            int lastNewLine =
+                    Math.max(
+                            content.lastIndexOf('\n'),
+                            content.lastIndexOf('\r')
+                    );
+
+            String beforeLastLine =
+                    content.substring(
+                            0,
+                            lastNewLine + 1
+                    );
+
+            String lastLine =
+                    content.substring(
+                            lastNewLine + 1
+                    );
+
+            String indentation =
+                    extractLeadingWhitespace(lastLine);
+
+            /*
+             * If the text immediately before the missing
+             * brace is only whitespace, use the indentation
+             * of the previous dependency line.
+             */
+            if (lastLine.trim().isEmpty()) {
+
+                indentation =
+                        findDependencyIndentation(
+                                content
+                        );
+            }
+
+            String trimmedContent =
+                    content.stripTrailing();
+
+            /*
+             * The malformed source may already contain the comma
+             * belonging to its last dependency. Do not add another
+             * comma in that case.
+             */
+            boolean hasTrailingComma =
+                    trimmedContent.endsWith(",");
+
+            String separator =
+                    hasExistingDependency && !hasTrailingComma
+                            ? ","
+                            : "";
+
+            String dependencyIndent =
+                    findDependencyIndentation(
+                            content
+                    );
+
+            if (dependencyIndent.isEmpty()) {
+                dependencyIndent = indentation;
+            }
+
+            newContent =
+                    trimmedContent
+                            + separator
+                            + "\n"
+                            + dependencyIndent
+                            + "\""
+                            + dependency
+                            + "\"\n";
+
+        } else {
+
+            String trimmedContent =
+                    content.trim();
+
+            /*
+             * If the last existing dependency already has its comma,
+             * reuse it instead of producing ",, ".
+             */
+            boolean hasTrailingComma =
+                    trimmedContent.endsWith(",");
+
+            String separator =
+                    hasExistingDependency && !hasTrailingComma
+                            ? ", "
+                            : hasExistingDependency
+                            ? " "
+                            : "";
+
+            newContent =
+                    trimmedContent
+                            + separator
+                            + "\""
+                            + dependency
+                            + "\"";
+        }
+
+        String repairedText =
+                annotationText.substring(
+                        0,
+                        openingBrace + 1
+                )
+                        + newContent
+                        + "}"
+                        + annotationText.substring(
+                        closingParen
+                );
+
+        PsiElementFactory factory =
+                PsiElementFactory.getInstance(project);
+
+        PsiAnnotation replacement =
+                factory.createAnnotationFromText(
+                        repairedText,
+                        annotation
+                );
+
+        annotation.replace(replacement);
+
+        return true;
+    }
+    private static int findClosingBrace(
+            @NotNull String text,
+            int openingBrace) {
+
+        boolean insideString = false;
+        boolean escaped = false;
+
+        for (int i = openingBrace + 1;
+             i < text.length();
+             i++) {
+
+            char current =
+                    text.charAt(i);
+
+            if (insideString) {
+
+                if (escaped) {
+                    escaped = false;
+                    continue;
+                }
+
+                if (current == '\\') {
+                    escaped = true;
+                    continue;
+                }
+
+                if (current == '"') {
+                    insideString = false;
+                }
+
+                continue;
+            }
+
+            if (current == '"') {
+                insideString = true;
+                continue;
+            }
+
+            if (current == '}') {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private boolean containsDependencyText(
+            @NotNull String content) {
+
+        String normalizedRequested =
+                dependency
+                        .trim()
+                        .replaceAll("\\s*::\\s*", " :: ");
+
+        String[] parts =
+                content.split(",");
+
+        for (String part : parts) {
+
+            String existing =
+                    part
+                            .trim()
+                            .replace("\"", "")
+                            .replaceAll(
+                                    "\\s*::\\s*",
+                                    " :: "
+                            );
+
+            if (normalizedRequested.equals(existing)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+    private static PsiAnnotationMemberValue createTemporaryAnnotationValue(
+            @NotNull String content) {
+
+        PsiElementFactory factory =
+                PsiElementFactory.getInstance(
+                        com.intellij.openapi.project.ProjectManager
+                                .getInstance()
+                                .getDefaultProject()
+                );
+
+        PsiAnnotation annotation =
+                factory.createAnnotationFromText(
+                        "@ApplicationModule(allowedDependencies = {"
+                                + content
+                                + "})",
+                        null
+                );
+
+        return annotation.findDeclaredAttributeValue(
+                "allowedDependencies"
+        );
     }
 
     private boolean containsDependencyLiteral(
