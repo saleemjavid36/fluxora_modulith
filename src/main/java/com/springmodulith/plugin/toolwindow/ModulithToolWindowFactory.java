@@ -12,7 +12,6 @@ import com.intellij.ui.components.JBPanel;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.content.ContentFactory;
 import com.intellij.util.ui.JBUI;
-import com.springmodulith.plugin.action.ModulithExportArchitectureAction;
 import com.springmodulith.plugin.configuration.ModulithProjectModelService;
 import com.springmodulith.plugin.model.ModulithDependencyGraph;
 import org.jetbrains.annotations.NotNull;
@@ -84,12 +83,25 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
         tabs.addTab("Verification", verificationPanel);
         root.add(tabs, BorderLayout.CENTER);
 
+        exportButton.setVisible(false);
+        exportButton.setEnabled(false);
+        verificationPanel.addPropertyChangeListener("verificationResult", event ->
+                exportButton.setEnabled(verificationPanel.hasVerificationResult())
+        );
+
         // Zoom controls are meaningful only for the Module Graph tab.
         ChangeListener tabChangeListener = event -> {
             boolean graphTabSelected = tabs.getSelectedIndex() == 0;
+            boolean verificationTabSelected = tabs.getSelectedIndex() == 2;
+
             zoomOutButton.setVisible(graphTabSelected);
             zoomLabelButton.setVisible(graphTabSelected);
             zoomInButton.setVisible(graphTabSelected);
+            exportButton.setVisible(verificationTabSelected);
+            exportButton.setEnabled(
+                    verificationTabSelected && verificationPanel.hasVerificationResult()
+            );
+
             buttons.revalidate();
             buttons.repaint();
         };
@@ -131,7 +143,7 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
         });
 
         refreshButton.addActionListener(e -> refreshAll.run());
-        exportButton.addActionListener(e -> ModulithExportArchitectureAction.export(project));
+        exportButton.addActionListener(e -> verificationPanel.exportVerificationResult());
         loadGraph(project, graphPanel, detailsPanel, structurePanel, refreshButton);
 
         toolWindow.getContentManager().addContent(

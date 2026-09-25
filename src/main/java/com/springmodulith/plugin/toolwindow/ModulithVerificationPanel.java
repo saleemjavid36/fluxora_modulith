@@ -6,6 +6,13 @@ import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.application.WriteAction;
+import com.intellij.openapi.fileChooser.FileChooserFactory;
+import com.intellij.openapi.fileChooser.FileSaverDescriptor;
+import com.intellij.openapi.fileChooser.FileSaverDialog;
+import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.vfs.VirtualFileWrapper;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBList;
@@ -55,6 +62,7 @@ public final class ModulithVerificationPanel extends JPanel {
     private final JButton verifyButton = new JButton("Verify Architecture");
 
     private boolean hasVerificationResult;
+    private ModulithVerificationResult verificationResult;
 
     public ModulithVerificationPanel(@NotNull Project project) {
         this.project = project;
@@ -120,6 +128,111 @@ public final class ModulithVerificationPanel extends JPanel {
         return hasVerificationResult;
     }
 
+    public void exportVerificationResult() {
+        if (verificationResult == null) {
+            Messages.showInfoMessage(
+                    project,
+                    "Run Verify Architecture before exporting verification data.",
+                    "Nothing to Export"
+            );
+            return;
+        }
+
+        FileSaverDescriptor descriptor = new FileSaverDescriptor(
+                "Export Verification Results",
+                "Choose JSON destination",
+                "json"
+        );
+
+        FileSaverDialog dialog =
+                FileChooserFactory.getInstance()
+                        .createSaveFileDialog(descriptor, project);
+
+        VirtualFileWrapper wrapper =
+                dialog.save(project.getBaseDir(), "verification.json");
+
+        if (wrapper == null) {
+            return;
+        }
+
+        VirtualFile targetFile = wrapper.getVirtualFile();
+        if (targetFile == null || !targetFile.isValid()) {
+            return;
+        }
+
+        String json = toVerificationJson(verificationResult);
+
+        try {
+            byte[] bytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            WriteAction.runAndWait(() -> targetFile.setBinaryContent(bytes));
+        } catch (java.io.IOException exception) {
+            Messages.showErrorDialog(
+                    project,
+                    "Unable to export verification JSON.\n\n"
+                            + exception.getMessage(),
+                    "Export Verification Failed"
+            );
+        }
+    }
+
+    private static String toVerificationJson(
+            @NotNull ModulithVerificationResult result
+    ) {
+        String violations = result.dependencyViolations().stream()
+                .map(analysis ->
+                        "{"
+                                + "\"sourceModule\":\"" + escapeJson(analysis.source().getName()) + "\","
+                                + "\"targetModule\":\"" + escapeJson(analysis.target().getName()) + "\","
+                                + "\"sourcePackage\":\"" + escapeJson(analysis.sourcePackage()) + "\","
+                                + "\"targetPackage\":\"" + escapeJson(analysis.targetPackage()) + "\","
+                                + "\"targetType\":"
+                                + (analysis.targetType() == null
+                                ? "null"
+                                : "\"" + escapeJson(analysis.targetType()) + "\"")
+                                + ",\"status\":\"" + escapeJson(analysis.status().name()) + "\","
+                                + "\"namedInterface\":"
+                                + (analysis.namedInterfaceName() == null
+                                ? "null"
+                                : "\"" + escapeJson(analysis.namedInterfaceName()) + "\"")
+                                + "}"
+                )
+                .collect(java.util.stream.Collectors.joining(","));
+
+        String cycles = result.cycles().stream()
+                .map(cycle -> "\"" + escapeJson(cycle) + "\"")
+                .collect(java.util.stream.Collectors.joining(","));
+
+        return "{"
+                + "\"dependencyViolationCount\":" + result.dependencyViolations().size() + ","
+                + "\"cycleCount\":" + result.cycles().size() + ","
+                + "\"violationCount\":" + result.violationCount() + ","
+                + "\"dependencyViolations\":[" + violations + "],"
+                + "\"dependencyCycles\":[" + cycles + "]"
+                + "}";
+    }
+
+    private static String escapeJson(String value) {
+        if (value == null) {
+            return "";
+        }
+
+        StringBuilder escaped = new StringBuilder(value.length() + 16);
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            switch (ch) {
+                case '\\' -> escaped.append("\\\\");
+                case '"' -> escaped.append("\\\"");
+                case '\b' -> escaped.append("\\b");
+                case '\f' -> escaped.append("\\f");
+                case '\n' -> escaped.append("\\n");
+                case '\r' -> escaped.append("\\r");
+                case '\t' -> escaped.append("\\t");
+                default -> escaped.append(ch);
+            }
+        }
+        return escaped.toString();
+    }
+
     public void verify() {
         verifyButton.setEnabled(false);
         summary.setForeground(UIUtil.getLabelForeground());
@@ -177,8 +290,11 @@ public final class ModulithVerificationPanel extends JPanel {
             return;
         }
 
+        boolean previousResultState = hasVerificationResult;
+        verificationResult = result;
         hasVerificationResult = true;
         verifyButton.setEnabled(true);
+        firePropertyChange("verificationResult", previousResultState, true);
 
         boolean passed = result.violationCount() == 0;
 
@@ -370,7 +486,10 @@ public final class ModulithVerificationPanel extends JPanel {
     }
 
     private void showNotVerified() {
+        boolean previousResultState = hasVerificationResult;
+        verificationResult = null;
         hasVerificationResult = false;
+        firePropertyChange("verificationResult", previousResultState, false);
         summary.setText("Architecture not verified");
         summary.setForeground(UIUtil.getLabelForeground());
         statusBadge.setText("Run verification to analyze the current project");
