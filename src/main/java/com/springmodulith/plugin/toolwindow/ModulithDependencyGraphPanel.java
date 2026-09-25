@@ -209,17 +209,18 @@ public final class ModulithDependencyGraphPanel extends JPanel {
                     return;
                 }
 
-                if (!event.isControlDown()) {
+                if (event.isControlDown()) {
+                    if (event.getWheelRotation() < 0) {
+                        zoomIn();
+                    } else if (event.getWheelRotation() > 0) {
+                        zoomOut();
+                    }
+
+                    event.consume();
                     return;
                 }
 
-                if (event.getWheelRotation() < 0) {
-                    zoomIn();
-                } else if (event.getWheelRotation() > 0) {
-                    zoomOut();
-                }
-
-                event.consume();
+                scrollVertically(event);
             }
         };
         addMouseListener(mouseAdapter);
@@ -252,6 +253,36 @@ public final class ModulithDependencyGraphPanel extends JPanel {
         int value = Math.max(0, Math.min(maximum, horizontalBar.getValue() + delta));
 
         horizontalBar.setValue(value);
+        event.consume();
+    }
+
+    private void scrollVertically(@NotNull java.awt.event.MouseWheelEvent event) {
+        javax.swing.JScrollPane scrollPane =
+                (javax.swing.JScrollPane) SwingUtilities.getAncestorOfClass(
+                        javax.swing.JScrollPane.class,
+                        this
+                );
+
+        if (scrollPane == null) {
+            return;
+        }
+
+        javax.swing.JScrollBar verticalBar =
+                scrollPane.getVerticalScrollBar();
+
+        int direction = event.getWheelRotation();
+        int unit = Math.max(24, verticalBar.getUnitIncrement());
+        int delta = direction * unit * Math.max(1, event.getScrollAmount());
+        int maximum = verticalBar.getMaximum() - verticalBar.getVisibleAmount();
+        int value = Math.max(
+                0,
+                Math.min(maximum, verticalBar.getValue() + delta)
+        );
+
+        if (value != verticalBar.getValue()) {
+            verticalBar.setValue(value);
+        }
+
         event.consume();
     }
 

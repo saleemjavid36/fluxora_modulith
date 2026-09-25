@@ -58,9 +58,19 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
         graphPanel.setModuleSelectionListener(detailsPanel::showModule);
         graphPanel.setDependencySelectionListener(detailsPanel::showDependency);
 
+        JBScrollPane graphScrollPane = new JBScrollPane(graphPanel);
+        graphScrollPane.setHorizontalScrollBarPolicy(
+                JBScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
+        );
+        graphScrollPane.setVerticalScrollBarPolicy(
+                JBScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
+        );
+        graphScrollPane.getHorizontalScrollBar().setUnitIncrement(24);
+        graphScrollPane.getVerticalScrollBar().setUnitIncrement(24);
+
         JSplitPane graphSplit = new JSplitPane(
                 JSplitPane.HORIZONTAL_SPLIT,
-                new JBScrollPane(graphPanel),
+                graphScrollPane,
                 detailsPanel);
         graphSplit.setResizeWeight(0.65);
         graphSplit.setDividerLocation(0.65);
@@ -86,7 +96,19 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
         tabs.addChangeListener(tabChangeListener);
         tabChangeListener.stateChanged(null);
 
-        project.getService(ModulithToolWindowController.class).register(tabs, verificationPanel);
+        Runnable refreshAll = () -> {
+            if (!refreshButton.isEnabled()) {
+                return;
+            }
+
+            loadGraph(project, graphPanel, detailsPanel, structurePanel, refreshButton);
+            if (verificationPanel.hasVerificationResult()) {
+                verificationPanel.verify();
+            }
+        };
+
+        project.getService(ModulithToolWindowController.class)
+                .register(tabs, verificationPanel, refreshAll);
 
         Runnable updateZoomLabel = () ->
                 zoomLabelButton.setText(
@@ -108,8 +130,7 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
             updateZoomLabel.run();
         });
 
-        refreshButton.addActionListener(e ->
-                loadGraph(project, graphPanel, detailsPanel, structurePanel, refreshButton));
+        refreshButton.addActionListener(e -> refreshAll.run());
         exportButton.addActionListener(e -> ModulithExportArchitectureAction.export(project));
         loadGraph(project, graphPanel, detailsPanel, structurePanel, refreshButton);
 
