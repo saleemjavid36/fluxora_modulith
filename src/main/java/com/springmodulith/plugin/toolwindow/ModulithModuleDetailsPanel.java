@@ -365,10 +365,7 @@ public final class ModulithModuleDetailsPanel extends JPanel {
         header.setOpaque(false);
         header.setBorder(
                 BorderFactory.createCompoundBorder(
-                        BorderFactory.createMatteBorder(
-                                1, 0, 0, 0,
-                                JBColor.border()
-                        ),
+                        JBUI.Borders.customLine(JBColor.border(), 1, 0, 0, 0),
                         JBUI.Borders.empty(10, 2, 5, 2)
                 )
         );
