@@ -10,6 +10,7 @@ import org.jetbrains.annotations.NotNull;
 import java.awt.Color;
 import java.awt.geom.QuadCurve2D;
 import javax.swing.JPanel;
+import javax.swing.SwingUtilities;
 import java.awt.BasicStroke;
 import java.awt.Cursor;
 import java.awt.Dimension;
@@ -49,6 +50,10 @@ public final class ModulithDependencyGraphPanel extends JPanel {
     );
 
     private static final int CYCLE_CURVE_OFFSET = 55;
+    private static final double MIN_ZOOM = 0.60d;
+    private static final double MAX_ZOOM = 2.00d;
+    private static final double ZOOM_STEP = 0.10d;
+    private static final int EDGE_ROUTE_OFFSET = 55;
 
     private final Project project;
     private final Map<String, Point> nodePositions = new HashMap<>();
@@ -60,6 +65,12 @@ public final class ModulithDependencyGraphPanel extends JPanel {
     private Consumer<ModulithModule> moduleSelectionListener;
     private Consumer<ModulithDependencyGraph.ModuleDependency> dependencySelectionListener;
     private ModulithDependencyGraph.ModuleDependency selectedDependency;
+    private ModulithModule draggedModule;
+    private Point dragOffset;
+    private boolean draggingModule;
+    private double zoom = 1.0d;
+    private int baseGraphWidth = 650;
+    private int baseGraphHeight = 450;
 
     public ModulithDependencyGraphPanel(@NotNull Project project) {
         this.project = project;
@@ -70,12 +81,15 @@ public final class ModulithDependencyGraphPanel extends JPanel {
         MouseAdapter mouseAdapter = new MouseAdapter() {
             @Override
             public void mouseMoved(MouseEvent event) {
-                hoveredModule = findModuleAt(event.getPoint());
+                Point worldPoint = toWorldPoint(event.getPoint());
+                hoveredModule = findModuleAt(worldPoint);
                 ModulithDependencyGraph.ModuleDependency hoveredDependency =
-                        hoveredModule == null ? findDependencyAt(event.getPoint()) : null;
+                        hoveredModule == null ? findDependencyAt(worldPoint) : null;
+
                 setCursor(hoveredModule != null || hoveredDependency != null
                         ? Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
                         : Cursor.getDefaultCursor());
+
                 if (hoveredModule != null) {
                     updateTooltip(hoveredModule);
                 } else if (hoveredDependency != null) {
@@ -89,28 +103,45 @@ public final class ModulithDependencyGraphPanel extends JPanel {
             @Override
             public void mouseExited(MouseEvent event) {
                 hoveredModule = null;
-                setCursor(Cursor.getDefaultCursor());
+                if (!draggingModule) {
+                    setCursor(Cursor.getDefaultCursor());
+                }
                 setToolTipText("");
                 repaint();
             }
 
             @Override
             public void mousePressed(MouseEvent event) {
-                ModulithModule module = findModuleAt(event.getPoint());
-                if (module != null) {
+                Point worldPoint = toWorldPoint(event.getPoint());
+                ModulithModule module = findModuleAt(worldPoint);
+
+                if (module != null && event.getButton() == MouseEvent.BUTTON1) {
                     selectedDependency = null;
                     notifyDependencySelection(null);
                     selectedModule = module;
                     notifySelection(module);
-                    repaint();
-                    if (event.getClickCount() == 2) {
-                        openModule(module);
+
+                    Point position = nodePositions.get(module.getPackageName());
+                    if (position != null) {
+                        draggedModule = module;
+                        dragOffset = new Point(
+                                worldPoint.x - position.x,
+                                worldPoint.y - position.y
+                        );
+                        draggingModule = false;
+                        setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
                     }
+
+                    repaint();
+                    return;
+                }
+
+                if (event.getButton() != MouseEvent.BUTTON1) {
                     return;
                 }
 
                 ModulithDependencyGraph.ModuleDependency dependency =
-                        findDependencyAt(event.getPoint());
+                        findDependencyAt(worldPoint);
                 if (dependency != null) {
                     selectedModule = null;
                     selectedDependency = dependency;
@@ -125,9 +156,70 @@ public final class ModulithDependencyGraphPanel extends JPanel {
 
                 clearSelection();
             }
+
+            @Override
+            public void mouseDragged(MouseEvent event) {
+                if (draggedModule == null
+                        || !SwingUtilities.isLeftMouseButton(event)) {
+                    return;
+                }
+
+                Point worldPoint = toWorldPoint(event.getPoint());
+                Point position = nodePositions.get(draggedModule.getPackageName());
+
+                if (position == null || dragOffset == null) {
+                    return;
+                }
+
+                int newX = Math.max(PADDING / 2, worldPoint.x - dragOffset.x);
+                int newY = Math.max(PADDING / 2, worldPoint.y - dragOffset.y);
+
+                if (position.x != newX || position.y != newY) {
+                    position.setLocation(newX, newY);
+                    draggingModule = true;
+                    setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
+                    updatePreferredSizeForNodes();
+                    repaint();
+                }
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent event) {
+                if (draggedModule != null) {
+                    ModulithModule releasedModule = draggedModule;
+                    boolean wasDragged = draggingModule;
+
+                    draggedModule = null;
+                    dragOffset = null;
+                    draggingModule = false;
+                    setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+                    if (!wasDragged
+                            && event.getButton() == MouseEvent.BUTTON1
+                            && event.getClickCount() == 2) {
+                        openModule(releasedModule);
+                    }
+                }
+            }
+
+            @Override
+            public void mouseWheelMoved(java.awt.event.MouseWheelEvent event) {
+                if (!event.isControlDown()) {
+                    return;
+                }
+
+                if (event.getWheelRotation() < 0) {
+                    zoomIn();
+                } else if (event.getWheelRotation() > 0) {
+                    zoomOut();
+                }
+
+                event.consume();
+            }
         };
         addMouseListener(mouseAdapter);
         addMouseMotionListener(mouseAdapter);
+        addMouseWheelListener(mouseAdapter);
     }
 
     public void setModuleSelectionListener(Consumer<ModulithModule> listener) {
@@ -181,8 +273,11 @@ public final class ModulithDependencyGraphPanel extends JPanel {
                 return;
             }
 
+            java.awt.geom.AffineTransform originalTransform = g.getTransform();
+            g.scale(zoom, zoom);
             paintDependencies(g);
             paintModules(g);
+            g.setTransform(originalTransform);
             paintLegend(g);
         } finally {
             g.dispose();
@@ -324,7 +419,7 @@ public final class ModulithDependencyGraphPanel extends JPanel {
             if (cyclic) {
                 drawCycleArrow(g, dependency);
             } else {
-                drawArrow(g, source, target);
+                drawArrow(g, dependency, source, target);
             }
 
             drawEdgeLabel(g, dependency, source, target, dimmed);
@@ -497,22 +592,25 @@ public final class ModulithDependencyGraphPanel extends JPanel {
 
         if (graph.isCyclicEdge(dependency)) {
             Point control = getCycleControlPoint(dependency, a, b);
-
-            // Quadratic Bézier midpoint at t = 0.5.
-            x = (int) Math.round(
-                    0.25 * a.x +
-                            0.50 * control.x +
-                            0.25 * b.x
+            Point midpoint = quadraticPoint(a, control, b, 0.5d);
+            x = midpoint.x;
+            y = midpoint.y - 5;
+        } else {
+            Point control = getRouteControlPoint(
+                    dependency,
+                    a,
+                    b
             );
 
-            y = (int) Math.round(
-                    0.25 * a.y +
-                            0.50 * control.y +
-                            0.25 * b.y
-            ) - 5;
-        } else {
-            x = (a.x + b.x) / 2;
-            y = (a.y + b.y) / 2 - 5;
+            if (control == null) {
+                x = (a.x + b.x) / 2;
+                y = (a.y + b.y) / 2 - 5;
+            } else {
+                Point midpoint =
+                        quadraticPoint(a, control, b, 0.5d);
+                x = midpoint.x;
+                y = midpoint.y - 5;
+            }
         }
 
         FontMetrics metrics = g.getFontMetrics();
@@ -694,13 +792,221 @@ public final class ModulithDependencyGraphPanel extends JPanel {
         g.drawString(text, x + (NODE_WIDTH - metrics.stringWidth(text)) / 2, baseline);
     }
 
-    private void drawArrow(@NotNull Graphics2D g, @NotNull Point source, @NotNull Point target) {
+    private void drawArrow(
+            @NotNull Graphics2D g,
+            @NotNull ModulithDependencyGraph.ModuleDependency dependency,
+            @NotNull Point source,
+            @NotNull Point target) {
+
         Point sourceCenter = center(source);
         Point targetCenter = center(target);
         Point start = getIntersection(sourceCenter, targetCenter);
         Point end = getIntersection(targetCenter, sourceCenter);
-        g.draw(new Line2D.Double(start, end));
-        drawArrowHead(g, start, end);
+
+        Point control = getRouteControlPoint(dependency, start, end);
+        if (control == null) {
+            g.draw(new Line2D.Double(start, end));
+            drawArrowHead(g, start, end);
+            return;
+        }
+
+        QuadCurve2D curve = new QuadCurve2D.Double(
+                start.x,
+                start.y,
+                control.x,
+                control.y,
+                end.x,
+                end.y
+        );
+        g.draw(curve);
+
+        Point tangentStart = quadraticPoint(start, control, end, 0.90d);
+        drawArrowHead(g, tangentStart, end);
+    }
+
+    private Point getRouteControlPoint(
+            @NotNull ModulithDependencyGraph.ModuleDependency dependency,
+            @NotNull Point start,
+            @NotNull Point end) {
+
+        if (!edgeIsBlocked(start, end, dependency)) {
+            return null;
+        }
+
+        double dx = end.x - start.x;
+        double dy = end.y - start.y;
+        double length = Math.sqrt(dx * dx + dy * dy);
+
+        if (length == 0) {
+            return null;
+        }
+
+        double normalX = -dy / length;
+        double normalY = dx / length;
+
+        Point positive = new Point(
+                (int) Math.round(
+                        (start.x + end.x) / 2.0d
+                                + normalX * EDGE_ROUTE_OFFSET
+                ),
+                (int) Math.round(
+                        (start.y + end.y) / 2.0d
+                                + normalY * EDGE_ROUTE_OFFSET
+                )
+        );
+
+        Point negative = new Point(
+                (int) Math.round(
+                        (start.x + end.x) / 2.0d
+                                - normalX * EDGE_ROUTE_OFFSET
+                ),
+                (int) Math.round(
+                        (start.y + end.y) / 2.0d
+                                - normalY * EDGE_ROUTE_OFFSET
+                )
+        );
+
+        int positiveScore =
+                routeBlockingScore(start, positive, end, dependency);
+        int negativeScore =
+                routeBlockingScore(start, negative, end, dependency);
+
+        return positiveScore <= negativeScore
+                ? positive
+                : negative;
+    }
+
+    private boolean edgeIsBlocked(
+            @NotNull Point start,
+            @NotNull Point end,
+            @NotNull ModulithDependencyGraph.ModuleDependency dependency) {
+
+        for (ModulithModule module : graph.getModules()) {
+            String packageName = module.getPackageName();
+
+            if (packageName.equals(dependency.sourcePackage())
+                    || packageName.equals(dependency.targetPackage())) {
+                continue;
+            }
+
+            Point position = nodePositions.get(packageName);
+            if (position == null) {
+                continue;
+            }
+
+            java.awt.Rectangle rectangle =
+                    new java.awt.Rectangle(
+                            position.x - 4,
+                            position.y - 4,
+                            NODE_WIDTH + 8,
+                            NODE_HEIGHT + 8
+                    );
+
+            if (rectangle.intersectsLine(
+                    start.x,
+                    start.y,
+                    end.x,
+                    end.y)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private int routeBlockingScore(
+            @NotNull Point start,
+            @NotNull Point control,
+            @NotNull Point end,
+            @NotNull ModulithDependencyGraph.ModuleDependency dependency) {
+
+        int score = 0;
+
+        for (ModulithModule module : graph.getModules()) {
+            String packageName = module.getPackageName();
+
+            if (packageName.equals(dependency.sourcePackage())
+                    || packageName.equals(dependency.targetPackage())) {
+                continue;
+            }
+
+            Point position = nodePositions.get(packageName);
+            if (position == null) {
+                continue;
+            }
+
+            java.awt.Rectangle rectangle =
+                    new java.awt.Rectangle(
+                            position.x - 4,
+                            position.y - 4,
+                            NODE_WIDTH + 8,
+                            NODE_HEIGHT + 8
+                    );
+
+            if (quadraticIntersectsRectangle(
+                    start,
+                    control,
+                    end,
+                    rectangle)) {
+                score++;
+            }
+        }
+
+        return score;
+    }
+
+    private boolean quadraticIntersectsRectangle(
+            @NotNull Point start,
+            @NotNull Point control,
+            @NotNull Point end,
+            @NotNull java.awt.Rectangle rectangle) {
+
+        Point previous = start;
+
+        for (int i = 1; i <= 24; i++) {
+            double t = i / 24.0d;
+            Point current = quadraticPoint(
+                    start,
+                    control,
+                    end,
+                    t
+            );
+
+            if (rectangle.intersectsLine(
+                    previous.x,
+                    previous.y,
+                    current.x,
+                    current.y)) {
+                return true;
+            }
+
+            previous = current;
+        }
+
+        return false;
+    }
+
+    @NotNull
+    private Point quadraticPoint(
+            @NotNull Point start,
+            @NotNull Point control,
+            @NotNull Point end,
+            double t) {
+
+        double oneMinusT = 1.0d - t;
+
+        return new Point(
+                (int) Math.round(
+                        oneMinusT * oneMinusT * start.x
+                                + 2.0d * oneMinusT * t * control.x
+                                + t * t * end.x
+                ),
+                (int) Math.round(
+                        oneMinusT * oneMinusT * start.y
+                                + 2.0d * oneMinusT * t * control.y
+                                + t * t * end.y
+                )
+        );
     }
 
     private void drawArrowHead(@NotNull Graphics2D g, @NotNull Point start, @NotNull Point end) {
@@ -760,15 +1066,53 @@ public final class ModulithDependencyGraphPanel extends JPanel {
         for (ModulithDependencyGraph.ModuleDependency dependency : graph.getDependencies()) {
             Point source = nodePositions.get(dependency.sourcePackage());
             Point target = nodePositions.get(dependency.targetPackage());
-            if (source == null || target == null) continue;
+
+            if (source == null || target == null) {
+                continue;
+            }
 
             Point start = edgeStart(dependency);
             Point end = edgeEnd(dependency);
-            double distance = Line2D.ptSegDist(
-                    start.x, start.y, end.x, end.y, point.x, point.y
-            );
+            double distance;
 
-            if (distance <= 9.0 && distance < closestDistance) {
+            if (graph.isCyclicEdge(dependency)) {
+                Point control = getCycleControlPoint(
+                        dependency,
+                        start,
+                        end
+                );
+
+                distance = quadraticDistanceToPoint(
+                        start,
+                        control,
+                        end,
+                        point
+                );
+            } else {
+                Point control = getRouteControlPoint(
+                        dependency,
+                        start,
+                        end
+                );
+
+                distance = control == null
+                        ? Line2D.ptSegDist(
+                        start.x,
+                        start.y,
+                        end.x,
+                        end.y,
+                        point.x,
+                        point.y
+                )
+                        : quadraticDistanceToPoint(
+                        start,
+                        control,
+                        end,
+                        point
+                );
+            }
+
+            if (distance <= 10.0 && distance < closestDistance) {
                 closestDistance = distance;
                 closest = dependency;
             }
@@ -777,37 +1121,174 @@ public final class ModulithDependencyGraphPanel extends JPanel {
         return closest;
     }
 
+    private double quadraticDistanceToPoint(
+            @NotNull Point start,
+            @NotNull Point control,
+            @NotNull Point end,
+            @NotNull Point point) {
+
+        double closestDistance = Double.MAX_VALUE;
+        Point previous = start;
+
+        for (int i = 1; i <= 32; i++) {
+            double t = i / 32.0d;
+            Point current = quadraticPoint(
+                    start,
+                    control,
+                    end,
+                    t
+            );
+
+            closestDistance = Math.min(
+                    closestDistance,
+                    Line2D.ptSegDist(
+                            previous.x,
+                            previous.y,
+                            current.x,
+                            current.y,
+                            point.x,
+                            point.y
+                    )
+            );
+
+            previous = current;
+        }
+
+        return closestDistance;
+    }
+
     private void calculateLayout() {
         nodePositions.clear();
 
-        if (graph == null) return;
-
-        if (graph.getModules().isEmpty()) {
-            setPreferredSize(new Dimension(
-                    Math.max(650, EMPTY_STATE_WIDTH + PADDING * 2),
-                    450
-            ));
+        if (graph == null) {
             return;
         }
 
-        List<ModulithModule> modules = new ArrayList<>(graph.getModules());
-        int columns = Math.max(1, (int) Math.ceil(Math.sqrt(modules.size())));
+        if (graph.getModules().isEmpty()) {
+            baseGraphWidth =
+                    Math.max(650, EMPTY_STATE_WIDTH + PADDING * 2);
+            baseGraphHeight = 450;
+            updatePreferredSize();
+            return;
+        }
+
+        List<ModulithModule> modules =
+                new ArrayList<>(graph.getModules());
+
+        int columns = Math.max(
+                1,
+                (int) Math.ceil(Math.sqrt(modules.size()))
+        );
+
         for (int i = 0; i < modules.size(); i++) {
             int row = i / columns;
             int column = i % columns;
+
             nodePositions.put(
                     modules.get(i).getPackageName(),
                     new Point(
-                            PADDING + column * (NODE_WIDTH + HORIZONTAL_GAP),
-                            PADDING + row * (NODE_HEIGHT + VERTICAL_GAP)
+                            PADDING
+                                    + column * (NODE_WIDTH + HORIZONTAL_GAP),
+                            PADDING
+                                    + row * (NODE_HEIGHT + VERTICAL_GAP)
                     )
             );
         }
 
-        int rows = (int) Math.ceil((double) modules.size() / columns);
-        int width = PADDING * 2 + columns * NODE_WIDTH + (columns - 1) * HORIZONTAL_GAP;
-        int height = PADDING * 2 + rows * NODE_HEIGHT + (rows - 1) * VERTICAL_GAP + LEGEND_HEIGHT;
-        setPreferredSize(new Dimension(Math.max(width, 650), Math.max(height, 450)));
+        int rows =
+                (int) Math.ceil((double) modules.size() / columns);
+
+        baseGraphWidth = Math.max(
+                650,
+                PADDING * 2
+                        + columns * NODE_WIDTH
+                        + (columns - 1) * HORIZONTAL_GAP
+        );
+
+        baseGraphHeight = Math.max(
+                450,
+                PADDING * 2
+                        + rows * NODE_HEIGHT
+                        + (rows - 1) * VERTICAL_GAP
+                        + LEGEND_HEIGHT
+        );
+
+        updatePreferredSize();
+    }
+
+    private void updatePreferredSizeForNodes() {
+        int maxX = PADDING;
+        int maxY = PADDING;
+
+        for (Point position : nodePositions.values()) {
+            maxX = Math.max(
+                    maxX,
+                    position.x + NODE_WIDTH + PADDING
+            );
+            maxY = Math.max(
+                    maxY,
+                    position.y + NODE_HEIGHT + PADDING
+            );
+        }
+
+        baseGraphWidth = Math.max(650, maxX);
+        baseGraphHeight = Math.max(
+                450,
+                maxY + LEGEND_HEIGHT
+        );
+
+        updatePreferredSize();
+    }
+
+    private void updatePreferredSize() {
+        setPreferredSize(new Dimension(
+                Math.max(
+                        650,
+                        (int) Math.ceil(baseGraphWidth * zoom)
+                ),
+                Math.max(
+                        450,
+                        (int) Math.ceil(baseGraphHeight * zoom)
+                )
+        ));
+        revalidate();
+    }
+
+    @NotNull
+    private Point toWorldPoint(@NotNull Point screenPoint) {
+        return new Point(
+                (int) Math.round(screenPoint.x / zoom),
+                (int) Math.round(screenPoint.y / zoom)
+        );
+    }
+
+    public void zoomIn() {
+        setZoom(Math.min(MAX_ZOOM, zoom + ZOOM_STEP));
+    }
+
+    public void zoomOut() {
+        setZoom(Math.max(MIN_ZOOM, zoom - ZOOM_STEP));
+    }
+
+    public void resetZoom() {
+        setZoom(1.0d);
+    }
+
+    public double getZoom() {
+        return zoom;
+    }
+
+    private void setZoom(double newZoom) {
+        double clamped =
+                Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
+
+        if (Math.abs(clamped - zoom) < 0.001d) {
+            return;
+        }
+
+        zoom = clamped;
+        updatePreferredSize();
+        repaint();
     }
 
     private ModulithModule findModuleAt(@NotNull Point point) {
@@ -898,6 +1379,9 @@ public final class ModulithDependencyGraphPanel extends JPanel {
         selectedModule = null;
         selectedDependency = null;
         hoveredModule = null;
+        draggedModule = null;
+        dragOffset = null;
+        draggingModule = false;
         nodePositions.clear();
         notifySelection(null);
         notifyDependencySelection(null);

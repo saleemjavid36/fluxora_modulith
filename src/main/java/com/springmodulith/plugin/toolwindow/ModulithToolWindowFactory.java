@@ -33,8 +33,20 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
         JPanel header = new JBPanel<>(new BorderLayout(8, 8));
         header.add(new JBLabel("Spring Modulith Architecture"), BorderLayout.WEST);
         JPanel buttons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 6, 0));
+
+        JButton zoomOutButton = new JButton("−");
+        JButton zoomLabelButton = new JButton("100%");
+        JButton zoomInButton = new JButton("+");
         JButton refreshButton = new JButton("Refresh");
         JButton exportButton = new JButton("Export JSON");
+
+        zoomOutButton.setToolTipText("Zoom out");
+        zoomLabelButton.setToolTipText("Reset zoom");
+        zoomInButton.setToolTipText("Zoom in");
+
+        buttons.add(zoomOutButton);
+        buttons.add(zoomLabelButton);
+        buttons.add(zoomInButton);
         buttons.add(exportButton);
         buttons.add(refreshButton);
         header.add(buttons, BorderLayout.EAST);
@@ -62,6 +74,26 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
         root.add(tabs, BorderLayout.CENTER);
 
         project.getService(ModulithToolWindowController.class).register(tabs, verificationPanel);
+
+        Runnable updateZoomLabel = () ->
+                zoomLabelButton.setText(
+                        Math.round(graphPanel.getZoom() * 100) + "%"
+                );
+
+        zoomOutButton.addActionListener(e -> {
+            graphPanel.zoomOut();
+            updateZoomLabel.run();
+        });
+
+        zoomLabelButton.addActionListener(e -> {
+            graphPanel.resetZoom();
+            updateZoomLabel.run();
+        });
+
+        zoomInButton.addActionListener(e -> {
+            graphPanel.zoomIn();
+            updateZoomLabel.run();
+        });
 
         refreshButton.addActionListener(e ->
                 loadGraph(project, graphPanel, detailsPanel, structurePanel, refreshButton));
