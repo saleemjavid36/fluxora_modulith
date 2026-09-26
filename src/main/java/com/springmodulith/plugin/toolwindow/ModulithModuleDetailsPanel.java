@@ -18,6 +18,7 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.JLabel;
+import javax.swing.JScrollPane;
 import javax.swing.JPanel;
 import javax.swing.ListCellRenderer;
 import java.awt.BorderLayout;
@@ -76,7 +77,10 @@ public final class ModulithModuleDetailsPanel extends JPanel {
         scrollPane.setBorder(BorderFactory.createEmptyBorder());
         scrollPane.setOpaque(false);
         scrollPane.getViewport().setOpaque(false);
+        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         scrollPane.getVerticalScrollBar().setUnitIncrement(12);
+        scrollPane.getHorizontalScrollBar().setUnitIncrement(16);
         add(scrollPane, BorderLayout.CENTER);
 
         clear();
@@ -349,8 +353,8 @@ public final class ModulithModuleDetailsPanel extends JPanel {
         }
 
         JBList<String> list = new JBList<>(values);
-        configureList(list, 8);
         list.setCellRenderer(new DetailsRenderer());
+        configureList(list, 8);
 
         content.add(list);
     }
@@ -390,6 +394,14 @@ public final class ModulithModuleDetailsPanel extends JPanel {
         text.add(descriptionLabel);
 
         header.add(text, BorderLayout.CENTER);
+        header.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        // Keep each section header at its natural height. BoxLayout would
+        // otherwise stretch the header vertically and push the section data
+        // to the bottom when the details panel has extra space.
+        Dimension headerSize = header.getPreferredSize();
+        header.setMaximumSize(new Dimension(Integer.MAX_VALUE, headerSize.height));
+
         content.add(header);
     }
 
@@ -402,6 +414,14 @@ public final class ModulithModuleDetailsPanel extends JPanel {
         label.setFont(label.getFont().deriveFont(Font.ITALIC, 12.0f));
 
         empty.add(label);
+
+        // BoxLayout will otherwise stretch this placeholder vertically because
+        // JPanel has an effectively unbounded maximum height. Keep the value
+        // directly below its section header and leave spare space at the bottom.
+        Dimension preferredSize = empty.getPreferredSize();
+        empty.setMaximumSize(new Dimension(Integer.MAX_VALUE, preferredSize.height));
+        empty.setAlignmentX(Component.LEFT_ALIGNMENT);
+
         content.add(empty);
     }
 
@@ -427,6 +447,11 @@ public final class ModulithModuleDetailsPanel extends JPanel {
 
         panel.add(first);
         panel.add(second);
+
+        Dimension preferredSize = panel.getPreferredSize();
+        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, preferredSize.height));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
         content.add(panel);
     }
 
@@ -435,11 +460,22 @@ public final class ModulithModuleDetailsPanel extends JPanel {
             int visibleRows) {
 
         list.setVisibleRowCount(Math.min(list.getModel().getSize(), visibleRows));
-        list.setFixedCellHeight(-1);
         list.setBorder(JBUI.Borders.empty(2, 4, 8, 4));
         list.setBackground(UIUtil.getPanelBackground());
         list.setSelectionBackground(UIUtil.getListSelectionBackground());
         list.setSelectionForeground(UIUtil.getListSelectionForeground());
+        list.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        // Keep the list at its actual content size. In particular, do not give
+        // it an unlimited maximum width: long dependency values must be able
+        // to make the details scroll pane show a horizontal scrollbar.
+        Dimension preferredSize = list.getPreferredSize();
+        int width = Math.max(220, preferredSize.width);
+        int height = preferredSize.height;
+        Dimension contentSize = new Dimension(width, height);
+        list.setPreferredSize(contentSize);
+        list.setMinimumSize(new Dimension(0, height));
+        list.setMaximumSize(contentSize);
     }
 
     private Color statusColor(@NotNull String statusText) {
@@ -502,14 +538,11 @@ public final class ModulithModuleDetailsPanel extends JPanel {
             label.setBorder(JBUI.Borders.empty(5, 6));
             label.setFont(label.getFont().deriveFont(12.0f));
 
-            String text = String.valueOf(value);
-
             if (!selected) {
                 label.setForeground(UIUtil.getLabelForeground());
             }
 
-            int width = Math.max(140, list.getWidth() - 28);
-            String escaped = escapeHtml(text);
+            String text = String.valueOf(value);
 
             if (text.contains("    [")) {
                 int marker = text.indexOf("    [");
@@ -527,18 +560,21 @@ public final class ModulithModuleDetailsPanel extends JPanel {
                     stateColor = "#FFB74D";
                 }
 
+                // Keep the dependency target and its status on one line.
+                // The outer details scroll pane handles horizontal overflow.
                 label.setText(
-                        "<html><body style='width:" + width + "px'>"
-                                + "<b>" + mainText + "</b><br>"
+                        "<html><nobr><b>" + mainText + "</b> "
                                 + "<font color='" + stateColor + "'>"
                                 + stateText
-                                + "</font></body></html>"
+                                + "</font></nobr></html>"
                 );
             } else {
+                // No fixed HTML width here. A fixed width forces Swing's HTML
+                // renderer to wrap long package names onto multiple lines.
                 label.setText(
-                        "<html><body style='width:" + width + "px'>"
-                                + escaped
-                                + "</body></html>"
+                        "<html><nobr>"
+                                + escapeHtml(text)
+                                + "</nobr></html>"
                 );
             }
 
