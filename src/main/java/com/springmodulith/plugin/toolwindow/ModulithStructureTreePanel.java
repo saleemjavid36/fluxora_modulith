@@ -1319,6 +1319,7 @@ public final class ModulithStructureTreePanel extends JPanel {
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setBorder(JBUI.Borders.empty(18, 18, 24, 18));
         panel.setOpaque(false);
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         return panel;
     }
 
@@ -1343,6 +1344,12 @@ public final class ModulithStructureTreePanel extends JPanel {
 
         header.add(accent, BorderLayout.WEST);
         header.add(label, BorderLayout.CENTER);
+
+        Dimension preferredSize = header.getPreferredSize();
+        header.setMaximumSize(
+                new Dimension(Integer.MAX_VALUE, preferredSize.height)
+        );
+
         panel.add(header);
     }
 
@@ -1350,11 +1357,20 @@ public final class ModulithStructureTreePanel extends JPanel {
             @NotNull JPanel panel,
             @NotNull String text) {
 
-        JBLabel label = new JBLabel(wrapText(text, 390));
+        JBLabel label = new JBLabel(text);
         label.setFont(label.getFont().deriveFont(Font.PLAIN, 12f));
         label.setForeground(MUTED);
         label.setBorder(JBUI.Borders.emptyLeft(15));
         label.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        Dimension preferredSize = label.getPreferredSize();
+        label.setMaximumSize(
+                new Dimension(
+                        Math.max(preferredSize.width, 15),
+                        preferredSize.height
+                )
+        );
+
         panel.add(label);
     }
 
@@ -1393,6 +1409,12 @@ public final class ModulithStructureTreePanel extends JPanel {
 
         header.add(marker, BorderLayout.WEST);
         header.add(label, BorderLayout.CENTER);
+
+        Dimension preferredSize = header.getPreferredSize();
+        header.setMaximumSize(
+                new Dimension(Integer.MAX_VALUE, preferredSize.height)
+        );
+
         panel.add(header);
     }
 
@@ -1414,45 +1436,67 @@ public final class ModulithStructureTreePanel extends JPanel {
         if (label != null) {
             JBLabel labelComponent = new JBLabel(label);
             labelComponent.setForeground(MUTED);
-            labelComponent.setFont(labelComponent.getFont().deriveFont(Font.PLAIN, 11.5f));
-            labelComponent.setPreferredSize(new Dimension(108, 22));
-            row.add(labelComponent, BorderLayout.WEST);
+            labelComponent.setFont(
+                    labelComponent.getFont()
+                            .deriveFont(Font.PLAIN, 11.5f)
+            );
+            labelComponent.setPreferredSize(
+                    new Dimension(108, 22)
+            );
+            row.add(
+                    labelComponent,
+                    BorderLayout.WEST
+            );
         }
 
-        JBLabel valueComponent = new JBLabel(wrapText(value, 340));
+        JBLabel valueComponent = new JBLabel(value);
         valueComponent.setForeground(color);
-        valueComponent.setFont(valueComponent.getFont().deriveFont(Font.PLAIN, 12f));
-        row.add(valueComponent, BorderLayout.CENTER);
+        valueComponent.setFont(
+                valueComponent.getFont()
+                        .deriveFont(Font.PLAIN, 12f)
+        );
+        row.add(
+                valueComponent,
+                BorderLayout.CENTER
+        );
+
+        Dimension preferredSize = row.getPreferredSize();
+        row.setMaximumSize(
+                new Dimension(
+                        Integer.MAX_VALUE,
+                        preferredSize.height
+                )
+        );
 
         panel.add(row);
         panel.add(Box.createVerticalStrut(5));
     }
 
-    private String wrapText(@NotNull String text, int width) {
-        return "<html><body style='width:" + width + "px'>"
-                + escapeHtml(text)
-                + "</body></html>";
-    }
-
-    private String escapeHtml(@NotNull String value) {
-        return value
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;");
-    }
-
     private void setDetailsContent(@NotNull JPanel content) {
         detailsPanel.removeAll();
 
-        JScrollPane scrollPane = new JBScrollPane(content);
+        JBScrollPane scrollPane =
+                new JBScrollPane(content);
+
         scrollPane.setBorder(null);
         scrollPane.setOpaque(false);
         scrollPane.getViewport().setOpaque(false);
+
+        scrollPane.setVerticalScrollBarPolicy(
+                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
+        );
+        scrollPane.setHorizontalScrollBarPolicy(
+                JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
+        );
+
         scrollPane.getVerticalScrollBar().setUnitIncrement(14);
         scrollPane.getHorizontalScrollBar().setUnitIncrement(14);
 
-        detailsPanel.add(scrollPane, BorderLayout.CENTER);
+        detailsPanel.add(
+                scrollPane,
+                BorderLayout.CENTER
+        );
+
         detailsPanel.revalidate();
         detailsPanel.repaint();
     }
