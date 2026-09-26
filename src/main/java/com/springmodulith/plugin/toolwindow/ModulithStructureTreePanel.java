@@ -103,6 +103,8 @@ public final class ModulithStructureTreePanel extends JPanel {
     private final JPanel detailsPanel =
             new JPanel(new BorderLayout());
 
+    private JSplitPane splitPane;
+
     private ModulithDependencyGraph graph;
 
     public ModulithStructureTreePanel(
@@ -200,7 +202,7 @@ public final class ModulithStructureTreePanel extends JPanel {
          * =========================================================
          */
 
-        JSplitPane splitPane =
+        splitPane =
                 new JSplitPane(
                         JSplitPane.HORIZONTAL_SPLIT,
                         leftPanel,
@@ -208,15 +210,22 @@ public final class ModulithStructureTreePanel extends JPanel {
                 );
 
         splitPane.setResizeWeight(0.40);
-
-        splitPane.setDividerLocation(0.40);
-
+        splitPane.setDividerSize(3);
+        splitPane.setBackground(UIUtil.getPanelBackground());
         splitPane.setBorder(null);
 
         add(
                 splitPane,
                 BorderLayout.CENTER
         );
+
+        /*
+         * Keep the detail area hidden until the user selects an item.
+         * This preserves the existing detail content and selection
+         * behavior while giving the structure tree the full width by
+         * default.
+         */
+        hideDetailsPanel();
     }
 
     private void configureTree() {
@@ -335,6 +344,7 @@ public final class ModulithStructureTreePanel extends JPanel {
         }
 
         showEmptyDetails();
+        hideDetailsPanel();
     }
 
     /*
@@ -509,6 +519,12 @@ public final class ModulithStructureTreePanel extends JPanel {
 
     private void showNodeDetails(
             Object nodeObject) {
+
+        if (nodeObject instanceof EmptyNode) {
+            return;
+        }
+
+        showDetailsPanel();
 
         if (nodeObject instanceof ModuleNode node) {
 
@@ -1231,6 +1247,34 @@ public final class ModulithStructureTreePanel extends JPanel {
 
     /*
      * =============================================================
+     * DETAIL PANEL VISIBILITY
+     * =============================================================
+     */
+
+    private void showDetailsPanel() {
+        if (splitPane == null) {
+            return;
+        }
+
+        detailsPanel.setVisible(true);
+        splitPane.setDividerLocation(0.40);
+        splitPane.revalidate();
+        splitPane.repaint();
+    }
+
+    private void hideDetailsPanel() {
+        if (splitPane == null) {
+            return;
+        }
+
+        detailsPanel.setVisible(false);
+        splitPane.setDividerLocation(1.0);
+        splitPane.revalidate();
+        splitPane.repaint();
+    }
+
+    /*
+     * =============================================================
      * EMPTY DETAILS
      * =============================================================
      */
@@ -1586,6 +1630,7 @@ public final class ModulithStructureTreePanel extends JPanel {
             treeModel.reload();
 
             showEmptyDetails();
+            hideDetailsPanel();
 
             return;
         }
