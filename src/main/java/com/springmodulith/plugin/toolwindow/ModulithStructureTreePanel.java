@@ -328,10 +328,10 @@ public final class ModulithStructureTreePanel extends JPanel {
 
         treeModel.reload();
 
-        // IntelliJ's structure presentation keeps the useful metadata visible
-        // without forcing the user to manually expand every module.
-        for (int row = 0; row < structureTree.getRowCount(); row++) {
-            structureTree.expandRow(row);
+        // Keep every module collapsed by default. The root remains expanded
+        // so modules are visible without expanding their contents.
+        if (structureTree.getRowCount() > 0) {
+            structureTree.expandRow(0);
         }
 
         showEmptyDetails();

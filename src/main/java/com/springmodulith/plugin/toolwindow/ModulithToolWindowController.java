@@ -15,15 +15,17 @@ public final class ModulithToolWindowController {
     private JTabbedPane tabs;
     private ModulithVerificationPanel verificationPanel;
     private Runnable refreshAction;
+    private Runnable autoRefreshAction;
+    private boolean autoRefreshEnabled;
 
     public ModulithToolWindowController(@NotNull Project project) {
         this.project = project;
 
         refreshTimer = new Timer(350, event -> {
-            if (project.isDisposed() || refreshAction == null) {
+            if (project.isDisposed() || !autoRefreshEnabled || autoRefreshAction == null) {
                 return;
             }
-            refreshAction.run();
+            autoRefreshAction.run();
         });
         refreshTimer.setRepeats(false);
 
@@ -32,7 +34,7 @@ public final class ModulithToolWindowController {
                 new PsiModificationTracker.Listener() {
                     @Override
                     public void modificationCountChanged() {
-                        if (!project.isDisposed()) {
+                        if (!project.isDisposed() && autoRefreshEnabled) {
                             refreshTimer.restart();
                         }
                     }
@@ -43,10 +45,19 @@ public final class ModulithToolWindowController {
     public void register(
             @NotNull JTabbedPane tabs,
             @NotNull ModulithVerificationPanel verificationPanel,
-            @NotNull Runnable refreshAction) {
+            @NotNull Runnable refreshAction,
+            @NotNull Runnable autoRefreshAction) {
         this.tabs = tabs;
         this.verificationPanel = verificationPanel;
         this.refreshAction = refreshAction;
+        this.autoRefreshAction = autoRefreshAction;
+    }
+
+    public void setAutoRefreshEnabled(boolean enabled) {
+        autoRefreshEnabled = enabled;
+        if (!enabled) {
+            refreshTimer.stop();
+        }
     }
 
     public void showVerification() {

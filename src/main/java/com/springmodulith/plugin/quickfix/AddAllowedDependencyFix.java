@@ -378,6 +378,34 @@ public final class AddAllowedDependencyFix
          */
         if (arrayValue.getInitializers().length == 0) {
 
+            /*
+             * A PSI array with only comments has no initializers.
+             * Do not rebuild that array, because doing so would erase
+             * the user's commented dependency examples.
+             */
+            if (multiline && containsCommentOnlyContent(valueText)) {
+                String newValueText =
+                        insertDependencyIntoCommentOnlyArray(
+                                valueText,
+                                getElementIndent(valueText, closingBrace),
+                                dependency
+                        );
+
+                if (newValueText == null) {
+                    return;
+                }
+
+                replaceAnnotationArrayValue(
+                        factory,
+                        annotation,
+                        annotationText,
+                        valueText,
+                        newValueText
+                );
+
+                return;
+            }
+
             String newValueText;
 
             if (multiline) {
@@ -467,36 +495,18 @@ public final class AddAllowedDependencyFix
              *
              * from being generated.
              */
-            String contentBeforeClosing =
-                    valueText.substring(
-                            0,
-                            closingBrace
+            String newValueText =
+                    insertMultilineDependencyPreservingComments(
+                            valueText,
+                            arrayValue,
+                            closingBrace,
+                            elementIndent,
+                            dependency
                     );
 
-            int lastNonWhitespace =
-                    findLastNonWhitespace(
-                            contentBeforeClosing
-                    );
-
-            if (lastNonWhitespace < 0) {
+            if (newValueText == null) {
                 return;
             }
-
-            String content =
-                    contentBeforeClosing.substring(
-                            0,
-                            lastNonWhitespace + 1
-                    );
-
-            String newValueText =
-                    content
-                            + ",\n"
-                            + elementIndent
-                            + "\""
-                            + dependency
-                            + "\"\n"
-                            + closingIndent
-                            + "}";
 
             replaceAnnotationArrayValue(
                     factory,
@@ -561,6 +571,98 @@ public final class AddAllowedDependencyFix
                 newValueText
         );
     }
+    private static boolean containsCommentOnlyContent(
+            @NotNull String valueText) {
+
+        int openingBrace = valueText.indexOf('{');
+        int closingBrace = valueText.lastIndexOf('}');
+
+        if (openingBrace < 0 || closingBrace <= openingBrace) {
+            return false;
+        }
+
+        String content =
+                valueText.substring(
+                        openingBrace + 1,
+                        closingBrace
+                );
+
+        return content.contains("//")
+                || content.contains("/*")
+                || content.contains("*");
+    }
+
+    private static @Nullable String insertDependencyIntoCommentOnlyArray(
+            @NotNull String valueText,
+            @NotNull String elementIndent,
+            @NotNull String dependency) {
+
+        int openingBrace = valueText.indexOf('{');
+        if (openingBrace < 0) {
+            return null;
+        }
+
+        return valueText.substring(0, openingBrace + 1)
+                + "\n"
+                + elementIndent
+                + "\""
+                + dependency
+                + "\"\n"
+                + valueText.substring(openingBrace + 1);
+    }
+
+    private static @Nullable String insertMultilineDependencyPreservingComments(
+            @NotNull String valueText,
+            @NotNull PsiArrayInitializerMemberValue arrayValue,
+            int closingBrace,
+            @NotNull String elementIndent,
+            @NotNull String dependency) {
+
+        PsiAnnotationMemberValue[] initializers = arrayValue.getInitializers();
+        if (initializers.length == 0) {
+            return null;
+        }
+
+        int arrayStart = arrayValue.getTextRange().getStartOffset();
+        int lastInitializerEnd =
+                initializers[initializers.length - 1].getTextRange().getEndOffset()
+                        - arrayStart;
+
+        if (lastInitializerEnd < 0 || lastInitializerEnd > closingBrace) {
+            return null;
+        }
+
+        int comma = -1;
+        for (int i = lastInitializerEnd; i < closingBrace; i++) {
+            char c = valueText.charAt(i);
+            if (Character.isWhitespace(c)) {
+                continue;
+            }
+            if (c == ',') {
+                comma = i;
+            }
+            break;
+        }
+
+        if (comma >= 0) {
+            return valueText.substring(0, comma + 1)
+                    + "\n"
+                    + elementIndent
+                    + "\""
+                    + dependency
+                    + "\""
+                    + valueText.substring(comma + 1);
+        }
+
+        return valueText.substring(0, lastInitializerEnd)
+                + ",\n"
+                + elementIndent
+                + "\""
+                + dependency
+                + "\""
+                + valueText.substring(lastInitializerEnd);
+    }
+
     private static void replaceAnnotationArrayValue(
             @NotNull PsiElementFactory factory,
             @NotNull PsiAnnotation annotation,

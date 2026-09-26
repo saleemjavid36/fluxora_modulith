@@ -38,6 +38,7 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
         JButton zoomLabelButton = new JButton("100%");
         JButton zoomInButton = new JButton("+");
         JButton refreshButton = new JButton("Refresh");
+        JButton autoRefreshButton = new JButton("Auto Refresh: OFF");
         JButton exportButton = new JButton("Export JSON");
 
         zoomOutButton.setToolTipText("Zoom out");
@@ -47,6 +48,7 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
         buttons.add(zoomOutButton);
         buttons.add(zoomLabelButton);
         buttons.add(zoomInButton);
+        buttons.add(autoRefreshButton);
         buttons.add(exportButton);
         buttons.add(refreshButton);
         header.add(buttons, BorderLayout.EAST);
@@ -119,8 +121,26 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
             }
         };
 
-        project.getService(ModulithToolWindowController.class)
-                .register(tabs, verificationPanel, refreshAll);
+        ModulithToolWindowController controller =
+                project.getService(ModulithToolWindowController.class);
+
+        Runnable autoRefresh = () -> {
+            if (!refreshButton.isEnabled()) {
+                return;
+            }
+            loadGraph(project, graphPanel, detailsPanel, structurePanel, refreshButton);
+        };
+
+        controller.register(tabs, verificationPanel, refreshAll, autoRefresh);
+        controller.setAutoRefreshEnabled(false);
+
+        autoRefreshButton.addActionListener(e -> {
+            boolean enabled = autoRefreshButton.getText().endsWith("OFF");
+            controller.setAutoRefreshEnabled(enabled);
+            autoRefreshButton.setText(
+                    enabled ? "Auto Refresh: ON" : "Auto Refresh: OFF"
+            );
+        });
 
         Runnable updateZoomLabel = () ->
                 zoomLabelButton.setText(
