@@ -1139,12 +1139,12 @@ public final class ModulithStructureTreePanel extends JPanel {
                         : SUCCESS
         );
 
-        if (dependency.namedInterface() != null) {
+        if (!dependency.namedInterfaces().isEmpty()) {
 
             addValue(
                     content,
-                    "Named Interface",
-                    dependency.namedInterface(),
+                    "Named Interfaces",
+                    String.join(", ", dependency.namedInterfaces()),
                     INTERFACE_COLOR
             );
         }
@@ -1512,7 +1512,9 @@ public final class ModulithStructureTreePanel extends JPanel {
 
         String status;
 
-        if (dependency.isForbidden()) {
+        if (dependency.isMixed()) {
+            status = "MIXED";
+        } else if (dependency.isForbidden()) {
             status = "FORBIDDEN";
         } else if (dependency.isNamedInterface()) {
             status = "NAMED INTERFACE";

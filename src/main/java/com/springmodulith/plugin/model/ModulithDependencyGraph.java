@@ -198,8 +198,12 @@ public final class ModulithDependencyGraph {
         private final EdgeKind kind;
         private final boolean apiViolation;
         private final String namedInterface;
+        private final Set<String> namedInterfaces;
         private final List<ModulithDependencyReference> references;
-        private int referenceCount;
+        private final int allowedReferenceCount;
+        private final int forbiddenReferenceCount;
+        private final int namedInterfaceReferenceCount;
+        private final int referenceCount;
 
         public ModuleDependency(
                 @NotNull String sourcePackage,
@@ -234,14 +238,45 @@ public final class ModulithDependencyGraph {
                 String namedInterface,
                 int referenceCount,
                 @NotNull List<ModulithDependencyReference> references) {
+            this(
+                    sourcePackage,
+                    targetPackage,
+                    kind,
+                    apiViolation,
+                    namedInterface == null ? Set.of() : Set.of(namedInterface),
+                    kind == EdgeKind.FORBIDDEN ? 0 : referenceCount,
+                    kind == EdgeKind.FORBIDDEN ? referenceCount : 0,
+                    kind == EdgeKind.NAMED_INTERFACE ? referenceCount : 0,
+                    references
+            );
+        }
+
+        public ModuleDependency(
+                @NotNull String sourcePackage,
+                @NotNull String targetPackage,
+                @NotNull EdgeKind kind,
+                boolean apiViolation,
+                @NotNull Set<String> namedInterfaces,
+                int allowedReferenceCount,
+                int forbiddenReferenceCount,
+                int namedInterfaceReferenceCount,
+                @NotNull List<ModulithDependencyReference> references) {
             this.sourcePackage = sourcePackage;
             this.targetPackage = targetPackage;
             this.kind = kind;
             this.apiViolation = apiViolation;
-            this.namedInterface = namedInterface;
-            this.references = new ArrayList<>(references);
+            this.namedInterfaces = Collections.unmodifiableSet(new LinkedHashSet<>(namedInterfaces));
+            this.namedInterface = this.namedInterfaces.size() == 1
+                    ? this.namedInterfaces.iterator().next()
+                    : null;
+            this.references = Collections.unmodifiableList(new ArrayList<>(references));
+            this.allowedReferenceCount = Math.max(0, allowedReferenceCount);
+            this.forbiddenReferenceCount = Math.max(0, forbiddenReferenceCount);
+            this.namedInterfaceReferenceCount = Math.max(0, namedInterfaceReferenceCount);
             this.referenceCount = references.isEmpty()
-                    ? Math.max(1, referenceCount)
+                    ? Math.max(1, this.allowedReferenceCount
+                    + this.forbiddenReferenceCount
+                    + this.namedInterfaceReferenceCount)
                     : references.size();
         }
 
@@ -261,15 +296,35 @@ public final class ModulithDependencyGraph {
         }
 
         public boolean isAllowed() {
-            return kind != EdgeKind.FORBIDDEN && !apiViolation;
+            return !isForbidden();
         }
 
         public boolean isForbidden() {
-            return kind == EdgeKind.FORBIDDEN || apiViolation;
+            return kind == EdgeKind.FORBIDDEN || apiViolation || forbiddenReferenceCount > 0;
         }
 
         public boolean isNamedInterface() {
-            return kind == EdgeKind.NAMED_INTERFACE;
+            return !isForbidden() && namedInterfaceReferenceCount > 0;
+        }
+
+        public boolean isMixed() {
+            int categories = 0;
+            if (allowedReferenceCount > 0) categories++;
+            if (namedInterfaceReferenceCount > 0) categories++;
+            if (forbiddenReferenceCount > 0 || apiViolation) categories++;
+            return categories > 1;
+        }
+
+        public boolean hasAllowedReferences() {
+            return allowedReferenceCount > 0;
+        }
+
+        public boolean hasForbiddenReferences() {
+            return forbiddenReferenceCount > 0 || apiViolation;
+        }
+
+        public boolean hasNamedInterfaceReferences() {
+            return namedInterfaceReferenceCount > 0;
         }
 
         public boolean isApiViolation() {
@@ -281,21 +336,30 @@ public final class ModulithDependencyGraph {
             return namedInterface;
         }
 
+        @NotNull
+        public Set<String> namedInterfaces() {
+            return namedInterfaces;
+        }
+
         public int referenceCount() {
             return referenceCount;
         }
 
-        public void incrementReferenceCount() {
-            referenceCount++;
+        public int allowedReferenceCount() {
+            return allowedReferenceCount;
+        }
+
+        public int forbiddenReferenceCount() {
+            return forbiddenReferenceCount;
+        }
+
+        public int namedInterfaceReferenceCount() {
+            return namedInterfaceReferenceCount;
         }
 
         @NotNull
         public List<ModulithDependencyReference> references() {
-            return Collections.unmodifiableList(references);
-        }
-
-        public void addReference(@NotNull ModulithDependencyReference reference) {
-            references.add(reference);
+            return references;
         }
 
         @Override
@@ -303,19 +367,12 @@ public final class ModulithDependencyGraph {
             if (this == object) return true;
             if (!(object instanceof ModuleDependency other)) return false;
             return sourcePackage.equals(other.sourcePackage)
-                    && targetPackage.equals(other.targetPackage)
-                    && kind == other.kind
-                    && java.util.Objects.equals(namedInterface, other.namedInterface);
+                    && targetPackage.equals(other.targetPackage);
         }
 
         @Override
         public int hashCode() {
-            return java.util.Objects.hash(
-                    sourcePackage,
-                    targetPackage,
-                    kind,
-                    namedInterface
-            );
+            return java.util.Objects.hash(sourcePackage, targetPackage);
         }
 
         @Override
@@ -323,4 +380,5 @@ public final class ModulithDependencyGraph {
             return sourcePackage + " -> " + targetPackage + " [" + kind + "]";
         }
     }
+
 }

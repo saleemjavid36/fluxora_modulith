@@ -246,7 +246,9 @@ public final class ModulithModuleDetailsPanel extends JPanel {
         for (ModulithDependencyGraph.ModuleDependency dependency
                 : graph.getOutgoingDependencies(module)) {
 
-            String status = dependency.isForbidden()
+            String status = dependency.isMixed()
+                    ? "MIXED"
+                    : dependency.isForbidden()
                     ? "FORBIDDEN"
                     : dependency.isNamedInterface()
                     ? "NAMED INTERFACE"
@@ -260,9 +262,9 @@ public final class ModulithModuleDetailsPanel extends JPanel {
                 status += " + CYCLE";
             }
 
-            String interfaceName = dependency.namedInterface() == null
+            String interfaceName = dependency.namedInterfaces().isEmpty()
                     ? ""
-                    : "  ::  " + dependency.namedInterface();
+                    : "  ::  " + String.join(", ", dependency.namedInterfaces());
 
             result.add(
                     dependency.targetPackage()
@@ -297,7 +299,9 @@ public final class ModulithModuleDetailsPanel extends JPanel {
 
     private String edgeStatus(
             @NotNull ModulithDependencyGraph.ModuleDependency dependency) {
-        String status = dependency.isForbidden()
+        String status = dependency.isMixed()
+                ? "MIXED"
+                : dependency.isForbidden()
                 ? "FORBIDDEN"
                 : dependency.isNamedInterface()
                 ? "NAMED INTERFACE"

@@ -43,10 +43,10 @@ public final class ModulithDependencyGraphAnalyzer {
 
         Map<String, MutableDependency> aggregated = new LinkedHashMap<>();
         for (ModulithDependencyAnalysis analysis : analyses) {
+            // A module graph has one logical edge per module pair.
+            // Individual source references are retained inside that edge.
             String key = analysis.sourcePackage()
-                    + "->" + analysis.targetPackage()
-                    + "|" + analysis.status()
-                    + "|" + String.valueOf(analysis.namedInterfaceName());
+                    + "->" + analysis.targetPackage();
             MutableDependency dependency = aggregated.computeIfAbsent(
                     key,
                     ignored -> new MutableDependency(analysis)
@@ -65,53 +65,57 @@ public final class ModulithDependencyGraphAnalyzer {
     private static final class MutableDependency {
         private final String sourcePackage;
         private final String targetPackage;
-        private ModulithDependencyAnalysis.Status status;
         private boolean apiViolation;
-        private String namedInterface;
+        private int allowedReferenceCount;
+        private int forbiddenReferenceCount;
+        private int namedInterfaceReferenceCount;
+        private final java.util.Set<String> namedInterfaces = new LinkedHashSet<>();
         private final List<ModulithDependencyReference> references = new ArrayList<>();
 
         private MutableDependency(@NotNull ModulithDependencyAnalysis first) {
             this.sourcePackage = first.sourcePackage();
             this.targetPackage = first.targetPackage();
-            this.status = first.status();
-            this.apiViolation = first.apiViolation();
-            this.namedInterface = first.namedInterfaceName();
-            this.references.add(first.sourceReference());
+            add(first);
         }
 
         private void add(@NotNull ModulithDependencyAnalysis next) {
-            this.apiViolation |= next.apiViolation();
-            this.references.add(next.sourceReference());
+            apiViolation |= next.apiViolation();
+            references.add(next.sourceReference());
 
-            if (next.status() == ModulithDependencyAnalysis.Status.FORBIDDEN) {
-                status = ModulithDependencyAnalysis.Status.FORBIDDEN;
-            } else if (status != ModulithDependencyAnalysis.Status.FORBIDDEN
-                    && next.status() == ModulithDependencyAnalysis.Status.NAMED_INTERFACE) {
-                status = ModulithDependencyAnalysis.Status.NAMED_INTERFACE;
-                if (namedInterface == null) {
-                    namedInterface = next.namedInterfaceName();
-                } else if (next.namedInterfaceName() != null
-                        && !namedInterface.equals(next.namedInterfaceName())) {
-                    namedInterface = null;
+            switch (next.status()) {
+                case FORBIDDEN -> forbiddenReferenceCount++;
+                case NAMED_INTERFACE -> {
+                    namedInterfaceReferenceCount++;
+                    if (next.namedInterfaceName() != null) {
+                        namedInterfaces.add(next.namedInterfaceName());
+                    }
                 }
+                case ALLOWED -> allowedReferenceCount++;
             }
         }
 
         private ModulithDependencyGraph.ModuleDependency toGraphDependency() {
-            ModulithDependencyGraph.EdgeKind kind = switch (status) {
-                case FORBIDDEN -> ModulithDependencyGraph.EdgeKind.FORBIDDEN;
-                case NAMED_INTERFACE -> ModulithDependencyGraph.EdgeKind.NAMED_INTERFACE;
-                case ALLOWED -> ModulithDependencyGraph.EdgeKind.ALLOWED;
-            };
+            ModulithDependencyGraph.EdgeKind kind;
+            if (forbiddenReferenceCount > 0 || apiViolation) {
+                kind = ModulithDependencyGraph.EdgeKind.FORBIDDEN;
+            } else if (namedInterfaceReferenceCount > 0) {
+                kind = ModulithDependencyGraph.EdgeKind.NAMED_INTERFACE;
+            } else {
+                kind = ModulithDependencyGraph.EdgeKind.ALLOWED;
+            }
+
             return new ModulithDependencyGraph.ModuleDependency(
                     sourcePackage,
                     targetPackage,
                     kind,
                     apiViolation,
-                    namedInterface,
-                    references.size(),
+                    namedInterfaces,
+                    allowedReferenceCount,
+                    forbiddenReferenceCount,
+                    namedInterfaceReferenceCount,
                     references
             );
         }
     }
+
 }

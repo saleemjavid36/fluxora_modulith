@@ -635,18 +635,8 @@ public final class ModulithDependencyGraphPanel extends JPanel {
 
         if (graph.isCyclicEdge(dependency)) {
             label = "cycle";
-        } else if (dependency.isApiViolation()) {
-            label = "API violation";
-        } else if (dependency.isNamedInterface()) {
-            label = dependency.namedInterface() == null
-                    ? "named interface"
-                    : ":: " + dependency.namedInterface();
-        } else if (dependency.isForbidden()) {
-            label = "forbidden";
         } else {
-            label = dependency.referenceCount() > 1
-                    ? "allowed ×" + dependency.referenceCount()
-                    : "allowed";
+            label = dependencyEdgeLabel(dependency);
         }
 
         Point a = edgeStart(dependency);
@@ -685,6 +675,53 @@ public final class ModulithDependencyGraphPanel extends JPanel {
         g.fillRoundRect(x - width / 2, y - height + 3, width, height, 8, 8);
         g.setColor(dimmed ? JBColor.GRAY : JBColor.foreground());
         g.drawString(label, x - metrics.stringWidth(label) / 2, y);
+    }
+
+    @NotNull
+    private String dependencyEdgeLabel(
+            @NotNull ModulithDependencyGraph.ModuleDependency dependency) {
+
+        if (dependency.isMixed()) {
+            List<String> parts = new ArrayList<>();
+
+            if (dependency.forbiddenReferenceCount() > 0 || dependency.isApiViolation()) {
+                int count = dependency.forbiddenReferenceCount();
+                parts.add(count > 0 ? "forbidden ×" + count : "API violation");
+            }
+
+            if (dependency.namedInterfaceReferenceCount() > 0) {
+                parts.add("named interface ×" + dependency.namedInterfaceReferenceCount());
+            }
+
+            if (dependency.allowedReferenceCount() > 0) {
+                parts.add("root API ×" + dependency.allowedReferenceCount());
+            }
+
+            return String.join(" • ", parts);
+        }
+
+        if (dependency.isApiViolation()) {
+            return "API violation";
+        }
+
+        if (dependency.isNamedInterface()) {
+            if (dependency.namedInterface() != null) {
+                return dependency.namedInterfaceReferenceCount() > 1
+                        ? ":: " + dependency.namedInterface() + " ×" + dependency.namedInterfaceReferenceCount()
+                        : ":: " + dependency.namedInterface();
+            }
+            return "named interface ×" + dependency.namedInterfaceReferenceCount();
+        }
+
+        if (dependency.isForbidden()) {
+            return dependency.forbiddenReferenceCount() > 1
+                    ? "forbidden ×" + dependency.forbiddenReferenceCount()
+                    : "forbidden";
+        }
+
+        return dependency.allowedReferenceCount() > 1
+                ? "root API ×" + dependency.allowedReferenceCount()
+                : "root API";
     }
 
     private void paintLegend(@NotNull Graphics2D g) {
@@ -1443,16 +1480,16 @@ public final class ModulithDependencyGraphPanel extends JPanel {
 
     private void updateTooltip(
             @NotNull ModulithDependencyGraph.ModuleDependency dependency) {
-        String interfaceName = dependency.namedInterface() == null
+        String interfaces = dependency.namedInterfaces().isEmpty()
                 ? ""
-                : " :: " + dependency.namedInterface();
+                : " — interfaces: " + String.join(", ", dependency.namedInterfaces());
         setToolTipText(
                 dependency.sourcePackage()
                         + " → "
                         + dependency.targetPackage()
-                        + interfaceName
                         + " — "
-                        + (dependency.isForbidden() ? "FORBIDDEN" : "ALLOWED")
+                        + dependencyEdgeLabel(dependency)
+                        + interfaces
                         + " — "
                         + dependency.referenceCount()
                         + " reference(s)"

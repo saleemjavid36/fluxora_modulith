@@ -73,7 +73,17 @@ public final class ModulithExportArchitectureAction extends AnAction {
                 .collect(Collectors.joining(","));
 
         String deps = graph.getDependencies().stream()
-                .map(d -> "{\"source\":\"" + escape(d.sourcePackage()) + "\",\"target\":\"" + escape(d.targetPackage()) + "\",\"kind\":\"" + escape(String.valueOf(d.kind())) + "\",\"namedInterface\":" + (d.namedInterface() == null ? "null" : "\"" + escape(d.namedInterface()) + "\"") + ",\"references\":" + d.referenceCount() + "}")
+                .map(d -> "{\"source\":\"" + escape(d.sourcePackage())
+                        + "\",\"target\":\"" + escape(d.targetPackage())
+                        + "\",\"kind\":\"" + escape(String.valueOf(d.kind()))
+                        + "\",\"namedInterfaces\":["
+                        + d.namedInterfaces().stream()
+                        .map(i -> "\"" + escape(i) + "\"")
+                        .collect(Collectors.joining(","))
+                        + "],\"allowedReferences\":" + d.allowedReferenceCount()
+                        + ",\"forbiddenReferences\":" + d.forbiddenReferenceCount()
+                        + ",\"namedInterfaceReferences\":" + d.namedInterfaceReferenceCount()
+                        + ",\"references\":" + d.referenceCount() + "}")
                 .collect(Collectors.joining(","));
 
         return "{\"modules\":[" + modules + "],\"dependencies\":[" + deps + "]}";
