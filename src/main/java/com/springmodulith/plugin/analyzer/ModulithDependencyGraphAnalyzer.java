@@ -43,7 +43,10 @@ public final class ModulithDependencyGraphAnalyzer {
 
         Map<String, MutableDependency> aggregated = new LinkedHashMap<>();
         for (ModulithDependencyAnalysis analysis : analyses) {
-            String key = analysis.sourcePackage() + "->" + analysis.targetPackage();
+            String key = analysis.sourcePackage()
+                    + "->" + analysis.targetPackage()
+                    + "|" + analysis.status()
+                    + "|" + String.valueOf(analysis.namedInterfaceName());
             MutableDependency dependency = aggregated.computeIfAbsent(
                     key,
                     ignored -> new MutableDependency(analysis)

@@ -303,12 +303,19 @@ public final class ModulithDependencyGraph {
             if (this == object) return true;
             if (!(object instanceof ModuleDependency other)) return false;
             return sourcePackage.equals(other.sourcePackage)
-                    && targetPackage.equals(other.targetPackage);
+                    && targetPackage.equals(other.targetPackage)
+                    && kind == other.kind
+                    && java.util.Objects.equals(namedInterface, other.namedInterface);
         }
 
         @Override
         public int hashCode() {
-            return 31 * sourcePackage.hashCode() + targetPackage.hashCode();
+            return java.util.Objects.hash(
+                    sourcePackage,
+                    targetPackage,
+                    kind,
+                    namedInterface
+            );
         }
 
         @Override

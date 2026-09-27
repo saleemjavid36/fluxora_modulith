@@ -6,6 +6,7 @@ import com.intellij.util.ui.JBUI;
 import com.springmodulith.plugin.model.ModulithDependencyGraph;
 import com.springmodulith.plugin.model.ModulithModule;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.awt.Color;
 import java.awt.geom.QuadCurve2D;
@@ -893,6 +894,11 @@ public final class ModulithDependencyGraphPanel extends JPanel {
             @NotNull Point start,
             @NotNull Point end) {
 
+        Point parallelControl = getParallelControlPoint(dependency, start, end);
+        if (parallelControl != null) {
+            return parallelControl;
+        }
+
         if (!edgeIsBlocked(start, end, dependency)) {
             return null;
         }
@@ -938,6 +944,46 @@ public final class ModulithDependencyGraphPanel extends JPanel {
         return positiveScore <= negativeScore
                 ? positive
                 : negative;
+    }
+
+    @Nullable
+    private Point getParallelControlPoint(
+            @NotNull ModulithDependencyGraph.ModuleDependency dependency,
+            @NotNull Point start,
+            @NotNull Point end) {
+
+        List<ModulithDependencyGraph.ModuleDependency> parallel = new ArrayList<>();
+        for (ModulithDependencyGraph.ModuleDependency candidate : graph.getDependencies()) {
+            if (candidate.sourcePackage().equals(dependency.sourcePackage())
+                    && candidate.targetPackage().equals(dependency.targetPackage())) {
+                parallel.add(candidate);
+            }
+        }
+
+        if (parallel.size() <= 1) {
+            return null;
+        }
+
+        int index = parallel.indexOf(dependency);
+        if (index < 0) {
+            return null;
+        }
+
+        double dx = end.x - start.x;
+        double dy = end.y - start.y;
+        double length = Math.sqrt(dx * dx + dy * dy);
+        if (length == 0) {
+            return null;
+        }
+
+        double normalX = -dy / length;
+        double normalY = dx / length;
+        double offset = (index - (parallel.size() - 1) / 2.0d) * EDGE_ROUTE_OFFSET;
+
+        return new Point(
+                (int) Math.round((start.x + end.x) / 2.0d + normalX * offset),
+                (int) Math.round((start.y + end.y) / 2.0d + normalY * offset)
+        );
     }
 
     private boolean edgeIsBlocked(
