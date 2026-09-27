@@ -12,6 +12,7 @@ import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiImportStatement;
 import com.intellij.psi.PsiJavaCodeReferenceElement;
 import com.intellij.psi.PsiJavaFile;
+import com.intellij.psi.PsiWhiteSpace;
 import com.springmodulith.plugin.configuration.ModulithSettings;
 import com.springmodulith.plugin.model.ModulithModule;
 import com.springmodulith.plugin.quickfix.ExposePackageAsNamedInterfaceFix;
@@ -194,8 +195,22 @@ public final class ModulithApiUsageInspection
                         targetPackage
                 );
 
+        PsiElement nameElement =
+                reference.getReferenceNameElement();
+
+        if (nameElement == null
+                || isSuppressed(reference)) {
+            return;
+        }
+
+        /*
+         * Visible editor highlighting is provided by
+         * ModulithBoundaryAnnotator. Using INFORMATION here keeps the
+         * inspection result/quick-fix available without changing the
+         * Java identifier's foreground color.
+         */
         holder.registerProblem(
-                reference.getReferenceNameElement(),
+                nameElement,
                 "Modulith API violation: "
                         + sourceModule.getName()
                         + " accesses internal type "
@@ -205,6 +220,70 @@ public final class ModulithApiUsageInspection
                 ProblemHighlightType.INFORMATION,
                 fixes
         );
+    }
+
+    private static boolean isSuppressed(
+            @NotNull PsiElement element) {
+
+        PsiElement target =
+                findSuppressionTarget(element);
+
+        if (target == null) {
+            return false;
+        }
+
+        PsiElement previous = target.getPrevSibling();
+
+        while (previous != null) {
+            if (previous instanceof PsiWhiteSpace) {
+                previous = previous.getPrevSibling();
+                continue;
+            }
+
+            String text = previous.getText();
+
+            return text != null
+                    && text.contains("//noinspection ModulithApiUsage");
+        }
+
+        return false;
+    }
+
+    @NotNull
+    private static PsiElement findSuppressionTarget(
+            @NotNull PsiElement element) {
+
+        PsiImportStatement importStatement =
+                com.intellij.psi.util.PsiTreeUtil.getParentOfType(
+                        element,
+                        PsiImportStatement.class
+                );
+
+        if (importStatement != null) {
+            return importStatement;
+        }
+
+        PsiElement field =
+                com.intellij.psi.util.PsiTreeUtil.getParentOfType(
+                        element,
+                        com.intellij.psi.PsiField.class
+                );
+
+        if (field != null) {
+            return field;
+        }
+
+        PsiElement method =
+                com.intellij.psi.util.PsiTreeUtil.getParentOfType(
+                        element,
+                        com.intellij.psi.PsiMethod.class
+                );
+
+        if (method != null) {
+            return method;
+        }
+
+        return element;
     }
 
     @NotNull

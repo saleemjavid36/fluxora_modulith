@@ -16,13 +16,13 @@ import com.springmodulith.plugin.model.ModulithModule;
 import com.springmodulith.plugin.model.NamedInterface;
 import com.springmodulith.plugin.quickfix.AddAllowedDependencyFix;
 import com.springmodulith.plugin.quickfix.ExposePackageAsNamedInterfaceFix;
-import com.springmodulith.plugin.quickfix.MarkClassNamedInterfaceFix;
 import com.springmodulith.plugin.quickfix.NavigateToModuleFix;
 import com.springmodulith.plugin.quickfix.SuppressModulithInspectionFix;
 import com.springmodulith.plugin.resolver.ModulithModuleResolver;
 import org.jetbrains.annotations.NotNull;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiWhiteSpace;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -109,14 +109,21 @@ public final class ModulithDependencyInspection
         PsiElement nameElement =
                 reference.getReferenceNameElement();
 
-        if (nameElement == null) {
+        if (nameElement == null
+                || isSuppressed(reference)) {
             return;
         }
 
+        /*
+         * The editor underline is rendered by ModulithBoundaryAnnotator.
+         * Keep this inspection available for inspection results and
+         * quick-fix discovery without applying IntelliJ's ERROR text
+         * attributes, which turn the Java identifier itself red.
+         */
         holder.registerProblem(
                 nameElement,
                 message,
-                ProblemHighlightType.ERROR,
+                ProblemHighlightType.INFORMATION,
                 fixes
         );
     }
@@ -145,12 +152,36 @@ public final class ModulithDependencyInspection
         List<LocalQuickFix> fixes = new ArrayList<>();
 
         /*
-         * Prefer the most precise dependency rule for the accessed type.
+         * API exposure has priority.
          *
-         * If the target type belongs to a named interface, adding only
-         * "student" would NOT allow access to "student :: repository".
-         * Therefore the named-interface dependency must be the primary
-         * quick fix in that case.
+         * If the accessed type is outside the target module's exposed API,
+         * adding a broad module dependency does not make that type legal.
+         * Expose the accessed package first.
+         *
+         * Example:
+         *     teacher -> student.dto.StudentDto
+         *
+         * Fix:
+         *     Expose package 'org.example.student.dto'
+         *     as named interface 'dto'
+         */
+        if (dependency.apiViolation()) {
+            fixes.add(
+                    new ExposePackageAsNamedInterfaceFix(
+                            targetPackage
+                    )
+            );
+        }
+
+        /*
+         * Preserve the precise dependency quick fix for already-exposed
+         * named interfaces.
+         *
+         * Example:
+         *     student :: repository
+         *
+         * must never be reduced to the broader:
+         *     student
          */
         NamedInterface accessedNamedInterface =
                 target.findNamedInterfaceForType(
@@ -165,57 +196,43 @@ public final class ModulithDependencyInspection
                             + " :: "
                             + accessedNamedInterface.getName();
 
-            fixes.add(
-                    new AddAllowedDependencyFix(
-                            namedDependency,
-                            source.getPackageName(),
-                            "Add dependency '" + namedDependency
-                                    + "' to @ApplicationModule"
-                    )
-            );
+            if (!hasAllowedDependency(
+                    source,
+                    namedDependency
+            )) {
+                fixes.add(
+                        new AddAllowedDependencyFix(
+                                namedDependency,
+                                source.getPackageName(),
+                                "Add dependency '" + namedDependency
+                                        + "' to @ApplicationModule"
+                        )
+                );
+            }
 
-        } else {
+        } else if (targetPackage.equals(
+                target.getPackageName()
+        )) {
 
             /*
-             * The target type is not part of a named interface, so the
-             * module-level dependency is the appropriate dependency rule.
+             * Only root-package types use the module-level dependency.
+             * Internal packages must be exposed instead of being granted
+             * the broad module dependency.
              */
-            fixes.add(
-                    new AddAllowedDependencyFix(
-                            target.getName(),
-                            source.getPackageName(),
-                            "Add dependency '" + target.getName()
-                                    + "' to @ApplicationModule"
-                    )
-            );
-        }
+            String moduleDependency = target.getName();
 
-        /*
-         * If the violation is caused by the target being outside the
-         * exposed API, offer a fix that exposes its package or class.
-         * Do not add either action when the type is already exposed.
-         */
-        if (dependency.apiViolation()) {
-            NamedInterface exposedInterface =
-                    target.findNamedInterfaceForType(
-                            targetType,
-                            targetPackage
-                    );
-
-            if (exposedInterface == null) {
-                if (target.getNamedInterfaces().isEmpty()) {
-                    fixes.add(
-                            new ExposePackageAsNamedInterfaceFix(
-                                    targetPackage
-                            )
-                    );
-                } else {
-                    fixes.add(
-                            new MarkClassNamedInterfaceFix(
-                                    target.getName()
-                            )
-                    );
-                }
+            if (!hasAllowedDependency(
+                    source,
+                    moduleDependency
+            )) {
+                fixes.add(
+                        new AddAllowedDependencyFix(
+                                moduleDependency,
+                                source.getPackageName(),
+                                "Add dependency '" + moduleDependency
+                                        + "' to @ApplicationModule"
+                        )
+                );
             }
         }
 
@@ -231,8 +248,111 @@ public final class ModulithDependencyInspection
          * Let the standard IntelliJ suppression machinery handle the
          * actual suppression syntax for the current Java context.
          */
-        fixes.add(new SuppressModulithInspectionFix());
+        fixes.add(new SuppressModulithInspectionFix("ModulithDependency"));
 
         return fixes.toArray(new LocalQuickFix[0]);
     }
+    private static boolean isSuppressed(
+            @NotNull PsiElement element) {
+
+        PsiElement target = findSuppressionTarget(element);
+
+        if (target == null) {
+            return false;
+        }
+
+        PsiElement previous = target.getPrevSibling();
+
+        while (previous != null) {
+            if (previous instanceof PsiWhiteSpace) {
+                previous = previous.getPrevSibling();
+                continue;
+            }
+
+            String text = previous.getText();
+
+            return text != null
+                    && text.contains("//noinspection ModulithDependency");
+        }
+
+        return false;
+    }
+
+    @NotNull
+    private static PsiElement findSuppressionTarget(
+            @NotNull PsiElement element) {
+
+        PsiImportStatement importStatement =
+                com.intellij.psi.util.PsiTreeUtil.getParentOfType(
+                        element,
+                        PsiImportStatement.class
+                );
+
+        if (importStatement != null) {
+            return importStatement;
+        }
+
+        PsiElement field =
+                com.intellij.psi.util.PsiTreeUtil.getParentOfType(
+                        element,
+                        com.intellij.psi.PsiField.class
+                );
+
+        if (field != null) {
+            return field;
+        }
+
+        PsiElement method =
+                com.intellij.psi.util.PsiTreeUtil.getParentOfType(
+                        element,
+                        com.intellij.psi.PsiMethod.class
+                );
+
+        if (method != null) {
+            return method;
+        }
+
+        return element;
+    }
+
+    private static boolean hasAllowedDependency(
+            @NotNull ModulithModule source,
+            @NotNull String dependency) {
+
+        ModulithModule.DependencyRule expected =
+                ModulithModule.DependencyRule.parse(dependency);
+
+        if (expected == null) {
+            return false;
+        }
+
+        for (String configuredDependency :
+                source.getAllowedDependencies()) {
+
+            ModulithModule.DependencyRule configured =
+                    ModulithModule.DependencyRule.parse(
+                            configuredDependency
+                    );
+
+            if (configured == null
+                    || !expected.moduleId().equals(
+                    configured.moduleId()
+            )) {
+                continue;
+            }
+
+            if (expected.interfaceId() == null) {
+                return configured.interfaceId() == null;
+            }
+
+            if (expected.interfaceId().equals(
+                    configured.interfaceId()
+            )) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
 }

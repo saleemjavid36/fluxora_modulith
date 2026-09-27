@@ -16,6 +16,11 @@ import com.intellij.psi.PsiImportStatement;
 import com.intellij.psi.PsiJavaCodeReferenceElement;
 import com.intellij.psi.PsiJavaFile;
 import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiField;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiStatement;
+import com.intellij.psi.PsiWhiteSpace;
+import com.intellij.psi.util.PsiTreeUtil;
 import com.springmodulith.plugin.analyzer.ModulithDependencyAnalyzer;
 import com.springmodulith.plugin.configuration.ModulithSettings;
 import com.springmodulith.plugin.model.ModulithDependencyAnalysis;
@@ -23,6 +28,7 @@ import com.springmodulith.plugin.model.ModulithModule;
 import com.springmodulith.plugin.model.NamedInterface;
 import com.springmodulith.plugin.quickfix.AddAllowedDependencyFix;
 import com.springmodulith.plugin.quickfix.ExposePackageAsNamedInterfaceFix;
+import com.springmodulith.plugin.quickfix.SuppressModulithInspectionFix;
 import com.springmodulith.plugin.resolver.ModulithModuleResolver;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -31,6 +37,9 @@ import java.awt.Color;
 import java.util.Set;
 
 public final class ModulithBoundaryAnnotator implements Annotator {
+
+    private static final String SUPPRESSION_COMMENT =
+            "//noinspection ModulithDependency";
 
     @Nullable
     private static IntentionAction createApiPopupFix(
@@ -113,6 +122,22 @@ public final class ModulithBoundaryAnnotator implements Annotator {
                 settings.isInspectAllowedDependencies()
                         && !isAllowedDependency(analysis);
 
+        /*
+         * The annotator creates its own highlighting, so it must honor
+         * the suppression belonging to the specific violation type.
+         */
+        if (apiViolation && isSuppressed(
+                reference,
+                "//noinspection ModulithApiUsage")) {
+            apiViolation = false;
+        }
+
+        if (dependencyViolation && isSuppressed(
+                reference,
+                "//noinspection ModulithDependency")) {
+            dependencyViolation = false;
+        }
+
         if (!apiViolation && !dependencyViolation) {
             return;
         }
@@ -190,6 +215,32 @@ public final class ModulithBoundaryAnnotator implements Annotator {
             if (dependencyFix != null) {
                 annotation.withFix(dependencyFix);
             }
+        }
+
+        /*
+         * The local inspection also remains available for batch analysis,
+         * but the editor annotation is the visual source of truth. Add
+         * suppression for exactly the violation(s) shown here.
+         */
+        if (apiViolation && dependencyViolation) {
+            annotation.withFix(
+                    new SuppressModulithInspectionFix(
+                            "ModulithDependency",
+                            "ModulithApiUsage"
+                    )
+            );
+        } else if (apiViolation) {
+            annotation.withFix(
+                    new SuppressModulithInspectionFix(
+                            "ModulithApiUsage"
+                    )
+            );
+        } else if (dependencyViolation) {
+            annotation.withFix(
+                    new SuppressModulithInspectionFix(
+                            "ModulithDependency"
+                    )
+            );
         }
 
         annotation.create();
@@ -640,6 +691,94 @@ public final class ModulithBoundaryAnnotator implements Annotator {
         }
 
         return false;
+    }
+
+    private static boolean isSuppressed(
+            @NotNull PsiElement element,
+            @NotNull String suppressionMarker) {
+
+        PsiElement target =
+                findSuppressionTarget(element);
+
+        if (target == null) {
+            return false;
+        }
+
+        PsiElement previous =
+                target.getPrevSibling();
+
+        while (previous != null) {
+
+            if (previous instanceof PsiWhiteSpace) {
+                previous = previous.getPrevSibling();
+                continue;
+            }
+
+            String text =
+                    previous.getText();
+
+            return text != null
+                    && text.contains(suppressionMarker);
+        }
+
+        return false;
+    }
+
+    @Nullable
+    private static PsiElement findSuppressionTarget(
+            @NotNull PsiElement element) {
+
+        PsiImportStatement importStatement =
+                PsiTreeUtil.getParentOfType(
+                        element,
+                        PsiImportStatement.class
+                );
+
+        if (importStatement != null) {
+            return importStatement;
+        }
+
+        PsiStatement statement =
+                PsiTreeUtil.getParentOfType(
+                        element,
+                        PsiStatement.class
+                );
+
+        if (statement != null) {
+            return statement;
+        }
+
+        PsiField field =
+                PsiTreeUtil.getParentOfType(
+                        element,
+                        PsiField.class
+                );
+
+        if (field != null) {
+            return field;
+        }
+
+        PsiMethod method =
+                PsiTreeUtil.getParentOfType(
+                        element,
+                        PsiMethod.class
+                );
+
+        if (method != null) {
+            return method;
+        }
+
+        PsiClass psiClass =
+                PsiTreeUtil.getParentOfType(
+                        element,
+                        PsiClass.class
+                );
+
+        if (psiClass != null) {
+            return psiClass;
+        }
+
+        return element;
     }
 
     @NotNull
