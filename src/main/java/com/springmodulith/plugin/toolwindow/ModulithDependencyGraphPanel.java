@@ -690,7 +690,7 @@ public final class ModulithDependencyGraphPanel extends JPanel {
             }
 
             if (dependency.namedInterfaceReferenceCount() > 0) {
-                parts.add("named interface ×" + dependency.namedInterfaceReferenceCount());
+                parts.add("allowed (named interface) ×" + dependency.namedInterfaceReferenceCount());
             }
 
             if (dependency.allowedReferenceCount() > 0) {
