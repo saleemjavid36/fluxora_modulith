@@ -1,5 +1,13 @@
 <html><body>
-Detects access from one recognized Spring Modulith module to a non-exposed type in another module.
-A module is open when <code>@ApplicationModule(open = true)</code> is configured; otherwise only named-interface
-packages/classes and the module's base package are exposed.
+<h2>Spring Modulith dependency</h2>
+<p>
+    Detects dependencies that cross recognized Spring Modulith module boundaries and violate the
+    source module's configured <code>@ApplicationModule(allowedDependencies = ...)</code> rules
+    or access a type that is not exposed by the target module.
+</p>
+<p>
+    The inspection highlights the exact cross-module reference in the Java editor and provides
+    context-aware quick fixes for allowing the dependency, exposing the target API, navigating
+    to the target module, or suppressing the inspection.
+</p>
 </body></html>

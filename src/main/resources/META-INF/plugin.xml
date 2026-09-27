@@ -78,7 +78,7 @@
                 displayName="Spring Modulith dependency"
                 groupName="Spring Modulith"
                 enabledByDefault="true"
-                level="WARNING"
+                level="ERROR"
                 implementationClass="com.springmodulith.plugin.inspection.ModulithDependencyInspection"/>
 
         <localInspection

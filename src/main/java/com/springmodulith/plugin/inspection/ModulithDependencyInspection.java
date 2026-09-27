@@ -15,6 +15,10 @@ import com.springmodulith.plugin.model.ModulithDependencyAnalysis;
 import com.springmodulith.plugin.model.ModulithModule;
 import com.springmodulith.plugin.model.NamedInterface;
 import com.springmodulith.plugin.quickfix.AddAllowedDependencyFix;
+import com.springmodulith.plugin.quickfix.ExposePackageAsNamedInterfaceFix;
+import com.springmodulith.plugin.quickfix.MarkClassNamedInterfaceFix;
+import com.springmodulith.plugin.quickfix.NavigateToModuleFix;
+import com.springmodulith.plugin.quickfix.SuppressModulithInspectionFix;
 import com.springmodulith.plugin.resolver.ModulithModuleResolver;
 import org.jetbrains.annotations.NotNull;
 import com.intellij.codeInspection.ProblemHighlightType;
@@ -112,7 +116,7 @@ public final class ModulithDependencyInspection
         holder.registerProblem(
                 nameElement,
                 message,
-                ProblemHighlightType.INFORMATION,
+                ProblemHighlightType.ERROR,
                 fixes
         );
     }
@@ -140,32 +144,94 @@ public final class ModulithDependencyInspection
 
         List<LocalQuickFix> fixes = new ArrayList<>();
 
-        fixes.add(
-                new AddAllowedDependencyFix(
-                        target.getName(),
-                        source.getPackageName()
-                )
-        );
-
-        for (NamedInterface namedInterface :
-                target.getNamedInterfaces()) {
-
-            if (namedInterface.containsType(targetType)
-                    || namedInterface.containsPackage(targetPackage)) {
-
-                String namedDependency =
-                        target.getName()
-                                + " :: "
-                                + namedInterface.getName();
-
-                fixes.add(
-                        new AddAllowedDependencyFix(
-                                namedDependency,
-                                source.getPackageName()
-                        )
+        /*
+         * Prefer the most precise dependency rule for the accessed type.
+         *
+         * If the target type belongs to a named interface, adding only
+         * "student" would NOT allow access to "student :: repository".
+         * Therefore the named-interface dependency must be the primary
+         * quick fix in that case.
+         */
+        NamedInterface accessedNamedInterface =
+                target.findNamedInterfaceForType(
+                        targetType,
+                        targetPackage
                 );
+
+        if (accessedNamedInterface != null) {
+
+            String namedDependency =
+                    target.getName()
+                            + " :: "
+                            + accessedNamedInterface.getName();
+
+            fixes.add(
+                    new AddAllowedDependencyFix(
+                            namedDependency,
+                            source.getPackageName(),
+                            "Add dependency '" + namedDependency
+                                    + "' to @ApplicationModule"
+                    )
+            );
+
+        } else {
+
+            /*
+             * The target type is not part of a named interface, so the
+             * module-level dependency is the appropriate dependency rule.
+             */
+            fixes.add(
+                    new AddAllowedDependencyFix(
+                            target.getName(),
+                            source.getPackageName(),
+                            "Add dependency '" + target.getName()
+                                    + "' to @ApplicationModule"
+                    )
+            );
+        }
+
+        /*
+         * If the violation is caused by the target being outside the
+         * exposed API, offer a fix that exposes its package or class.
+         * Do not add either action when the type is already exposed.
+         */
+        if (dependency.apiViolation()) {
+            NamedInterface exposedInterface =
+                    target.findNamedInterfaceForType(
+                            targetType,
+                            targetPackage
+                    );
+
+            if (exposedInterface == null) {
+                if (target.getNamedInterfaces().isEmpty()) {
+                    fixes.add(
+                            new ExposePackageAsNamedInterfaceFix(
+                                    targetPackage
+                            )
+                    );
+                } else {
+                    fixes.add(
+                            new MarkClassNamedInterfaceFix(
+                                    target.getName()
+                            )
+                    );
+                }
             }
         }
+
+        /*
+         * Navigation is deliberately read-only and never changes the
+         * source project.
+         */
+        fixes.add(
+                new NavigateToModuleFix(target.getPackageName())
+        );
+
+        /*
+         * Let the standard IntelliJ suppression machinery handle the
+         * actual suppression syntax for the current Java context.
+         */
+        fixes.add(new SuppressModulithInspectionFix());
 
         return fixes.toArray(new LocalQuickFix[0]);
     }

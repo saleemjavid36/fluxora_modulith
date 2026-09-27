@@ -341,22 +341,30 @@ public final class ModulithDependencyAnalyzer {
         );
 
         if (namedInterface != null) {
-            return "Modulith named-interface dependency is not allowed: "
-                    + dependencyName
-                    + " :: "
-                    + namedInterface.getName();
+            return "Dependency from module '"
+                    + analysis.source().getName()
+                    + "' to module '"
+                    + analysis.target().getName()
+                    + "' is not allowed through named interface '"
+                    + namedInterface.getName()
+                    + "'.";
         }
 
         if (analysis.apiViolation()) {
-            return "Modulith API violation: "
+            return "Module '"
                     + analysis.source().getName()
-                    + " accesses internal type "
+                    + "' accesses internal type '"
                     + analysis.targetClass().getQualifiedName()
-                    + " from module "
-                    + analysis.target().getName();
+                    + "' from module '"
+                    + analysis.target().getName()
+                    + "'.";
         }
 
-        return "Modulith dependency is not allowed: " + dependencyName;
+        return "Dependency from module '"
+                + analysis.source().getName()
+                + "' to module '"
+                + analysis.target().getName()
+                + "' is not allowed.";
     }
 
     @Nullable

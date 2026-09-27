@@ -1,10 +1,15 @@
 package com.springmodulith.plugin;
 
+import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase5;
 import com.springmodulith.plugin.configuration.ModulithSettings;
 import com.springmodulith.plugin.inspection.ModulithDependencyInspection;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ModulithDependencyInspectionTest
         extends LightJavaCodeInsightFixtureTestCase5 {
@@ -98,7 +103,7 @@ class ModulithDependencyInspectionTest
                 false,
                 false,
                 false,
-                "Modulith dependency is not allowed: account -> user"
+                "Dependency from module 'account' to module 'user' is not allowed."
         );
     }
 
@@ -166,6 +171,53 @@ class ModulithDependencyInspectionTest
                 false,
                 false
         );
+    }
+
+    @Test
+    void forbiddenDependencyProvidesActionableQuickFixes() {
+        add(
+                "com/example/teacher/package-info.java",
+                "@org.springframework.modulith.ApplicationModule(" +
+                        "allowedDependencies = {})\n" +
+                        "package com.example.teacher;"
+        );
+
+        add(
+                "com/example/teacher/TeacherService.java",
+                "package com.example.teacher; " +
+                        "import com.example.student.StudentRepository; " +
+                        "class TeacherService { " +
+                        "StudentRepository repository; " +
+                        "}"
+        );
+
+        add(
+                "com/example/student/StudentRepository.java",
+                "package com.example.student; " +
+                        "public class StudentRepository {}"
+        );
+
+        fixture.configureByText(
+                "TeacherClient.java",
+                "package com.example.teacher;\n" +
+                        "import com.example.student.StudentRepository;\n" +
+                        "class TeacherClient {\n" +
+                        "    <caret>StudentRepository repository;\n" +
+                        "}"
+        );
+
+        List<IntentionAction> fixes = fixture.getAvailableQuickFixes();
+
+        assertTrue(containsAction(fixes, "Add dependency 'student' to @ApplicationModule"));
+        assertTrue(containsAction(fixes, "Navigate to module 'student'"));
+        assertTrue(containsAction(fixes, "Suppress inspection"));
+    }
+
+    private boolean containsAction(
+            List<IntentionAction> actions,
+            String name) {
+        return actions.stream()
+                .anyMatch(action -> name.equals(action.getText()));
     }
 
     private void add(String path, String text) {
