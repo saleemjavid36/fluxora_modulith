@@ -6,13 +6,11 @@ import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.fileChooser.FileChooserFactory;
 import com.intellij.openapi.fileChooser.FileSaverDescriptor;
 import com.intellij.openapi.fileChooser.FileSaverDialog;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.ui.ComboBox;
-import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileWrapper;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.components.JBLabel;
@@ -48,6 +46,10 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.awt.event.MouseEvent;
 import java.awt.Font;
 import java.awt.Insets;
@@ -175,17 +177,26 @@ public final class ModulithVerificationPanel extends JPanel {
             return;
         }
 
-        VirtualFile targetFile = wrapper.getVirtualFile();
-        if (targetFile == null || !targetFile.isValid()) {
+        File targetFile = wrapper.getFile();
+        if (targetFile == null) {
             return;
         }
 
         String json = toVerificationJson(verificationResult);
 
         try {
-            byte[] bytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            WriteAction.runAndWait(() -> targetFile.setBinaryContent(bytes));
-        } catch (java.io.IOException exception) {
+            Files.writeString(
+                    targetFile.toPath(),
+                    json,
+                    StandardCharsets.UTF_8
+            );
+
+            Messages.showInfoMessage(
+                    project,
+                    "Verification JSON exported to:\n" + targetFile.getAbsolutePath(),
+                    "Export Complete"
+            );
+        } catch (IOException exception) {
             Messages.showErrorDialog(
                     project,
                     "Unable to export verification JSON.\n\n"
