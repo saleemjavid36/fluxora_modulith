@@ -36,6 +36,7 @@ import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
+import javax.swing.SwingUtilities;
 import javax.swing.ListCellRenderer;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
@@ -597,11 +598,21 @@ public final class ModulithVerificationPanel extends JPanel {
         if (verificationResult == null || content == null || forbiddenFilter == null) {
             return;
         }
+
+        boolean searchHadFocus = searchField != null && searchField.hasFocus();
+
         content.removeAll();
         content.add(createFilterPanel(), BorderLayout.NORTH);
         content.add(createFilteredSections(), BorderLayout.CENTER);
         revalidate();
         repaint();
+
+        // Rebuilding the result section also recreates the component hierarchy.
+        // Restore the search field focus so typing can continue without clicking
+        // the field again after every character.
+        if (searchHadFocus && searchField != null) {
+            SwingUtilities.invokeLater(() -> searchField.requestFocusInWindow());
+        }
     }
 
     private JPanel createSectionCard(
