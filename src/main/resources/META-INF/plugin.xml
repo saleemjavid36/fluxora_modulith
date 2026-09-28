@@ -44,7 +44,7 @@
         <action id="com.springmodulith.plugin.exportArchitecture"
                 class="com.springmodulith.plugin.action.ModulithExportArchitectureAction"
                 text="Export Spring Modulith Architecture"
-                description="Export the detected Spring Modulith architecture as JSON">
+                description="Export the detected Spring Modulith architecture as JSON, Mermaid, PlantUML, or Graphviz DOT">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
         <action id="com.springmodulith.plugin.toggleToolWindow"
