@@ -13,7 +13,6 @@ import com.intellij.ui.components.JBPanel;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.content.ContentFactory;
 import com.intellij.util.ui.JBUI;
-import com.springmodulith.plugin.action.ModulithExportArchitectureAction;
 import com.springmodulith.plugin.configuration.ModulithProjectModelService;
 import com.springmodulith.plugin.model.ModulithDependencyGraph;
 import org.jetbrains.annotations.NotNull;
@@ -22,6 +21,7 @@ import javax.swing.JButton;
 import javax.swing.JTabbedPane;
 import javax.swing.JPanel;
 import javax.swing.JSplitPane;
+import javax.swing.event.ChangeListener;
 import javax.swing.SwingUtilities;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
@@ -69,6 +69,10 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
         buttons.add(autoRefreshButton);
         buttons.add(refreshButton);
         buttons.add(exportButton);
+
+        // Header actions are scoped to the tab where they are applicable.
+        // Zoom controls belong to Module Graph; Export JSON belongs to Verification.
+        exportButton.setVisible(false);
 
         header.add(buttons, BorderLayout.EAST);
 
@@ -200,6 +204,22 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
                 BorderLayout.CENTER
         );
 
+        ChangeListener tabVisibilityListener = event -> {
+            boolean moduleGraphSelected = tabs.getSelectedIndex() == 0;
+            boolean verificationSelected = tabs.getSelectedIndex() == 2;
+
+            zoomOutButton.setVisible(moduleGraphSelected);
+            zoomLabel.setVisible(moduleGraphSelected);
+            zoomInButton.setVisible(moduleGraphSelected);
+            exportButton.setVisible(verificationSelected);
+
+            buttons.revalidate();
+            buttons.repaint();
+        };
+
+        tabs.addChangeListener(tabVisibilityListener);
+        tabVisibilityListener.stateChanged(null);
+
         /*
          * The controller in the current project requires:
          *
@@ -287,7 +307,7 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
         );
 
         exportButton.addActionListener(
-                e -> ModulithExportArchitectureAction.export(project)
+                e -> verificationPanel.exportVerificationResult()
         );
 
         /*
