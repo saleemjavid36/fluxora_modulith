@@ -52,7 +52,9 @@ import java.awt.event.MouseEvent;
 import java.awt.Font;
 import java.awt.Insets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public final class ModulithVerificationPanel extends JPanel {
 
@@ -325,11 +327,15 @@ public final class ModulithVerificationPanel extends JPanel {
 
         statusBadge.setText(
                 passed
-                        ? "No dependency violations or cycles detected"
-                        : result.dependencyViolations().size()
-                        + " dependency violation(s)  •  "
+                        ? "0 Total  |  0 Forbidden  |  0 Cycles  |  0 Named Interface"
+                        : result.violationCount()
+                        + " Total  |  "
+                        + result.dependencyViolations().size()
+                        + " Forbidden  |  "
                         + result.cycles().size()
-                        + " cycle(s)"
+                        + " Cycles  |  "
+                        + countNamedInterfaceViolations(result.dependencyViolations())
+                        + " Named Interface"
         );
 
         summary.setForeground(
@@ -561,6 +567,18 @@ public final class ModulithVerificationPanel extends JPanel {
         return false;
     }
 
+    private int countNamedInterfaceViolations(
+            @NotNull List<ModulithDependencyAnalysis> dependencies
+    ) {
+        int count = 0;
+        for (ModulithDependencyAnalysis dependency : dependencies) {
+            if (isNamedInterfaceViolation(dependency)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     private boolean matchesSearch(@NotNull ModulithDependencyAnalysis analysis, @NotNull String query) {
         if (query.isBlank()) {
             return true;
@@ -691,12 +709,14 @@ public final class ModulithVerificationPanel extends JPanel {
         }
 
         JBList<?> list;
+        int rowCount;
         if (!values.isEmpty() && values.get(0) instanceof ModulithDependencyAnalysis) {
             @SuppressWarnings("unchecked")
             List<ModulithDependencyAnalysis> dependencies =
                     (List<ModulithDependencyAnalysis>) (List<?>) values;
-            JBList<ModulithDependencyAnalysis> dependencyList =
-                    new JBList<>(dependencies);
+            List<VerificationListEntry> entries = toDependencyListEntries(dependencies);
+            JBList<VerificationListEntry> dependencyList =
+                    new JBList<>(entries);
             dependencyList.setToolTipText("Click a dependency to navigate to its source");
             dependencyList.addMouseListener(new MouseAdapter() {
                 @Override
@@ -715,20 +735,27 @@ public final class ModulithVerificationPanel extends JPanel {
                         return;
                     }
 
-                    ModulithDependencyAnalysis analysis =
+                    VerificationListEntry entry =
                             dependencyList.getModel().getElementAt(index);
+                    if (entry.dependency() == null) {
+                        return;
+                    }
+
                     ModulithModuleNavigation.openReference(
                             project,
-                            analysis.sourceReference()
+                            entry.dependency().sourceReference()
                     );
                 }
             });
             list = dependencyList;
+            rowCount = entries.size();
         } else {
-            list = new JBList<>(toDisplayRows(values));
+            List<String> rows = toDisplayRows(values);
+            list = new JBList<>(rows);
+            rowCount = rows.size();
         }
 
-        list.setVisibleRowCount(Math.min(10, values.size()));
+        list.setVisibleRowCount(Math.min(10, rowCount));
         list.setBackground(card.getBackground());
         list.setBorder(BorderFactory.createEmptyBorder());
         list.setCellRenderer(new VerificationRowRenderer());
@@ -738,12 +765,37 @@ public final class ModulithVerificationPanel extends JPanel {
         listScrollPane.setBorder(BorderFactory.createEmptyBorder());
         listScrollPane.getVerticalScrollBar().setUnitIncrement(14);
         listScrollPane.setPreferredSize(
-                new Dimension(0, Math.min(320, values.size() * 30 + 4))
+                new Dimension(0, Math.min(320, rowCount * 30 + 4))
         );
 
         card.add(listScrollPane, BorderLayout.CENTER);
 
         return card;
+    }
+
+    @NotNull
+    private List<VerificationListEntry> toDependencyListEntries(
+            @NotNull List<ModulithDependencyAnalysis> dependencies
+    ) {
+        Map<String, List<ModulithDependencyAnalysis>> groups = new LinkedHashMap<>();
+        for (ModulithDependencyAnalysis dependency : dependencies) {
+            String key = dependency.source().getName()
+                    + "  →  "
+                    + dependency.target().getName();
+            groups.computeIfAbsent(key, ignored -> new ArrayList<>()).add(dependency);
+        }
+
+        List<VerificationListEntry> entries = new ArrayList<>();
+        for (Map.Entry<String, List<ModulithDependencyAnalysis>> group : groups.entrySet()) {
+            entries.add(VerificationListEntry.group(
+                    group.getKey(),
+                    group.getValue().size()
+            ));
+            for (ModulithDependencyAnalysis dependency : group.getValue()) {
+                entries.add(VerificationListEntry.dependency(dependency));
+            }
+        }
+        return entries;
     }
 
     @NotNull
@@ -861,8 +913,17 @@ public final class ModulithVerificationPanel extends JPanel {
                 boolean focused
         ) {
             Object displayValue = value;
-            if (value instanceof ModulithDependencyAnalysis analysis) {
-                displayValue = dependencyDisplayText(analysis);
+            boolean groupHeader = false;
+
+            if (value instanceof VerificationListEntry entry) {
+                if (entry.isGroupHeader()) {
+                    displayValue = entry.groupLabel() + "  " + entry.groupCount();
+                    groupHeader = true;
+                } else {
+                    displayValue = entry.dependency() == null
+                            ? entry.text()
+                            : dependencyDisplayText(entry.dependency());
+                }
             }
 
             JLabel label = (JLabel) super.getListCellRendererComponent(
@@ -882,14 +943,46 @@ public final class ModulithVerificationPanel extends JPanel {
                                     0,
                                     UIUtil.getBoundsColor()
                             ),
-                            JBUI.Borders.empty(5, 6)
+                            JBUI.Borders.empty(5, groupHeader ? 6 : 12)
                     )
             );
             label.setFont(
-                    label.getFont().deriveFont(Font.PLAIN, 12.0f)
+                    label.getFont().deriveFont(
+                            groupHeader ? Font.BOLD : Font.PLAIN,
+                            groupHeader ? 12.0f : 12.0f
+                    )
             );
 
+            if (groupHeader) {
+                label.setForeground(UIUtil.getLabelForeground());
+                label.setBackground(list.getBackground());
+            }
+
             return label;
+        }
+    }
+
+    private record VerificationListEntry(
+            String groupLabel,
+            int groupCount,
+            ModulithDependencyAnalysis dependency,
+            String text
+    ) {
+        private static VerificationListEntry group(
+                @NotNull String label,
+                int count
+        ) {
+            return new VerificationListEntry(label, count, null, null);
+        }
+
+        private static VerificationListEntry dependency(
+                @NotNull ModulithDependencyAnalysis dependency
+        ) {
+            return new VerificationListEntry(null, 0, dependency, null);
+        }
+
+        private boolean isGroupHeader() {
+            return groupLabel != null;
         }
     }
 }
