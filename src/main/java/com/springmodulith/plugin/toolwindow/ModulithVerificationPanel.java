@@ -25,6 +25,7 @@ import com.springmodulith.plugin.analyzer.ModulithVerificationAnalyzer;
 import com.springmodulith.plugin.model.ModulithDependencyAnalysis;
 import com.springmodulith.plugin.model.ModulithVerificationResult;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -46,6 +47,8 @@ import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.event.ActionListener;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.Font;
 import java.awt.Insets;
 import java.util.ArrayList;
@@ -538,7 +541,7 @@ public final class ModulithVerificationPanel extends JPanel {
             return false;
         }
 
-        String qualifiedType = analysis.targetClass().getQualifiedName();
+        String qualifiedType = getTargetQualifiedName(analysis);
         if (qualifiedType == null) {
             return false;
         }
@@ -590,8 +593,13 @@ public final class ModulithVerificationPanel extends JPanel {
                 + "  →  "
                 + analysis.targetPackage()
                 + "  ::  "
-                + analysis.targetClass().getQualifiedName()
+                + getTargetQualifiedName(analysis)
                 + namedInterface;
+    }
+
+    @Nullable
+    private String getTargetQualifiedName(@NotNull ModulithDependencyAnalysis analysis) {
+        return ReadAction.compute(() -> analysis.targetClass().getQualifiedName());
     }
 
     private void refreshFilteredResults() {
@@ -611,7 +619,7 @@ public final class ModulithVerificationPanel extends JPanel {
         // Restore the search field focus so typing can continue without clicking
         // the field again after every character.
         if (searchHadFocus && searchField != null) {
-            SwingUtilities.invokeLater(() -> searchField.requestFocusInWindow());
+            SwingUtilities.invokeLater(searchField::requestFocusInWindow);
         }
     }
 
@@ -682,9 +690,45 @@ public final class ModulithVerificationPanel extends JPanel {
             return card;
         }
 
-        List<String> rows = toDisplayRows(values);
-        JBList<String> list = new JBList<>(rows);
-        list.setVisibleRowCount(Math.min(10, rows.size()));
+        JBList<?> list;
+        if (!values.isEmpty() && values.get(0) instanceof ModulithDependencyAnalysis) {
+            @SuppressWarnings("unchecked")
+            List<ModulithDependencyAnalysis> dependencies =
+                    (List<ModulithDependencyAnalysis>) (List<?>) values;
+            JBList<ModulithDependencyAnalysis> dependencyList =
+                    new JBList<>(dependencies);
+            dependencyList.setToolTipText("Click a dependency to navigate to its source");
+            dependencyList.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent event) {
+                    if (event.getClickCount() != 1 || event.isConsumed()) {
+                        return;
+                    }
+
+                    int index = dependencyList.locationToIndex(event.getPoint());
+                    if (index < 0) {
+                        return;
+                    }
+
+                    java.awt.Rectangle bounds = dependencyList.getCellBounds(index, index);
+                    if (bounds == null || !bounds.contains(event.getPoint())) {
+                        return;
+                    }
+
+                    ModulithDependencyAnalysis analysis =
+                            dependencyList.getModel().getElementAt(index);
+                    ModulithModuleNavigation.openReference(
+                            project,
+                            analysis.sourceReference()
+                    );
+                }
+            });
+            list = dependencyList;
+        } else {
+            list = new JBList<>(toDisplayRows(values));
+        }
+
+        list.setVisibleRowCount(Math.min(10, values.size()));
         list.setBackground(card.getBackground());
         list.setBorder(BorderFactory.createEmptyBorder());
         list.setCellRenderer(new VerificationRowRenderer());
@@ -694,7 +738,7 @@ public final class ModulithVerificationPanel extends JPanel {
         listScrollPane.setBorder(BorderFactory.createEmptyBorder());
         listScrollPane.getVerticalScrollBar().setUnitIncrement(14);
         listScrollPane.setPreferredSize(
-                new Dimension(0, Math.min(320, rows.size() * 30 + 4))
+                new Dimension(0, Math.min(320, values.size() * 30 + 4))
         );
 
         card.add(listScrollPane, BorderLayout.CENTER);
@@ -805,7 +849,7 @@ public final class ModulithVerificationPanel extends JPanel {
         repaint();
     }
 
-    private static final class VerificationRowRenderer
+    private final class VerificationRowRenderer
             extends DefaultListCellRenderer {
 
         @Override
@@ -816,9 +860,14 @@ public final class ModulithVerificationPanel extends JPanel {
                 boolean selected,
                 boolean focused
         ) {
+            Object displayValue = value;
+            if (value instanceof ModulithDependencyAnalysis analysis) {
+                displayValue = dependencyDisplayText(analysis);
+            }
+
             JLabel label = (JLabel) super.getListCellRendererComponent(
                     list,
-                    value,
+                    displayValue,
                     index,
                     selected,
                     focused
