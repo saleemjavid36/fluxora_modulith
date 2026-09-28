@@ -21,14 +21,15 @@ public final class ModulithVerificationAnalyzer {
                 new ModulithDependencyAnalyzer(
                         new com.springmodulith.plugin.resolver.ModulithModuleResolver(project),
                         project);
+        List<ModulithDependencyAnalysis> allDependencies = analyzer.analyzeProject();
         List<ModulithDependencyAnalysis> violations = new ArrayList<>();
-        for (ModulithDependencyAnalysis analysis : analyzer.analyzeProject()) {
+        for (ModulithDependencyAnalysis analysis : allDependencies) {
             if (analysis.isForbidden()) violations.add(analysis);
         }
 
         List<String> cycles = new ModulithCycleAnalyzer(project).findCycles().stream()
                 .map(ModulithCycleAnalyzer.Cycle::displayPath)
                 .toList();
-        return new ModulithVerificationResult(violations, cycles);
+        return new ModulithVerificationResult(violations, cycles, allDependencies);
     }
 }

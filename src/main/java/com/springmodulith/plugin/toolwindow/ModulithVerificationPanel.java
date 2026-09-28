@@ -11,6 +11,7 @@ import com.intellij.openapi.fileChooser.FileChooserFactory;
 import com.intellij.openapi.fileChooser.FileSaverDescriptor;
 import com.intellij.openapi.fileChooser.FileSaverDialog;
 import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileWrapper;
 import com.intellij.ui.JBColor;
@@ -30,15 +31,20 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JPanel;
+import javax.swing.JTextField;
 import javax.swing.ListCellRenderer;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.event.ActionListener;
 import java.awt.Font;
 import java.awt.Insets;
 import java.util.ArrayList;
@@ -63,6 +69,14 @@ public final class ModulithVerificationPanel extends JPanel {
 
     private boolean hasVerificationResult;
     private ModulithVerificationResult verificationResult;
+
+    private JCheckBox forbiddenFilter;
+    private JCheckBox allowedFilter;
+    private JCheckBox cyclesFilter;
+    private JCheckBox namedInterfaceFilter;
+    private JTextField searchField;
+    private ComboBox<String> filterPreset;
+    private boolean updatingFilters;
 
     public ModulithVerificationPanel(@NotNull Project project) {
         this.project = project;
@@ -324,33 +338,268 @@ public final class ModulithVerificationPanel extends JPanel {
         );
 
         content.removeAll();
+        installFiltersIfNeeded();
+        content.add(createFilterPanel(), BorderLayout.NORTH);
+        content.add(createFilteredSections(), BorderLayout.CENTER);
 
+        revalidate();
+        repaint();
+    }
+
+    private void installFiltersIfNeeded() {
+        if (forbiddenFilter != null) {
+            return;
+        }
+
+        forbiddenFilter = new JCheckBox("Forbidden dependencies", true);
+        allowedFilter = new JCheckBox("Allowed dependencies", false);
+        cyclesFilter = new JCheckBox("Cycles", true);
+        namedInterfaceFilter = new JCheckBox("Named-interface violations", false);
+        searchField = new JTextField();
+        searchField.setToolTipText("Search dependencies and cycles");
+
+        filterPreset = new ComboBox<>(new String[]{
+                "Current",
+                "All",
+                "Dependencies",
+                "Cycles",
+                "Custom"
+        });
+        filterPreset.setSelectedItem("Current");
+        filterPreset.addActionListener(e -> applyFilterPreset());
+
+        ActionListener refreshListener = e -> {
+            if (!updatingFilters) {
+                filterPreset.setSelectedItem("Custom");
+                refreshFilteredResults();
+            }
+        };
+        forbiddenFilter.addActionListener(refreshListener);
+        allowedFilter.addActionListener(refreshListener);
+        cyclesFilter.addActionListener(refreshListener);
+        namedInterfaceFilter.addActionListener(refreshListener);
+
+        searchField.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                refreshFilteredResults();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                refreshFilteredResults();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                refreshFilteredResults();
+            }
+        });
+    }
+
+    private JPanel createFilterPanel() {
+        JPanel filterPanel = new JPanel(new BorderLayout(8, 6));
+        filterPanel.setOpaque(false);
+        filterPanel.setBorder(JBUI.Borders.emptyBottom(8));
+
+        JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        top.setOpaque(false);
+        top.add(new JBLabel("Filter:"));
+        top.add(filterPreset);
+        top.add(forbiddenFilter);
+        top.add(allowedFilter);
+        top.add(cyclesFilter);
+        top.add(namedInterfaceFilter);
+
+        JPanel searchPanel = new JPanel(new BorderLayout(6, 0));
+        searchPanel.setOpaque(false);
+        JLabel searchLabel = new JBLabel("Search:");
+        searchPanel.add(searchLabel, BorderLayout.WEST);
+        searchPanel.add(searchField, BorderLayout.CENTER);
+
+        filterPanel.add(top, BorderLayout.NORTH);
+        filterPanel.add(searchPanel, BorderLayout.SOUTH);
+        return filterPanel;
+    }
+
+    private void applyFilterPreset() {
+        if (filterPreset == null || updatingFilters) {
+            return;
+        }
+
+        String preset = String.valueOf(filterPreset.getSelectedItem());
+        if ("Custom".equals(preset)) {
+            refreshFilteredResults();
+            return;
+        }
+
+        updatingFilters = true;
+        try {
+            switch (preset) {
+                case "All" -> {
+                    forbiddenFilter.setSelected(true);
+                    allowedFilter.setSelected(true);
+                    cyclesFilter.setSelected(true);
+                    namedInterfaceFilter.setSelected(true);
+                }
+                case "Dependencies" -> {
+                    forbiddenFilter.setSelected(true);
+                    allowedFilter.setSelected(true);
+                    cyclesFilter.setSelected(false);
+                    namedInterfaceFilter.setSelected(true);
+                }
+                case "Cycles" -> {
+                    forbiddenFilter.setSelected(false);
+                    allowedFilter.setSelected(false);
+                    cyclesFilter.setSelected(true);
+                    namedInterfaceFilter.setSelected(false);
+                }
+                default -> {
+                    // Preserve the original verification view by default.
+                    forbiddenFilter.setSelected(true);
+                    allowedFilter.setSelected(false);
+                    cyclesFilter.setSelected(true);
+                    namedInterfaceFilter.setSelected(false);
+                }
+            }
+        } finally {
+            updatingFilters = false;
+        }
+        refreshFilteredResults();
+    }
+
+    private JPanel createFilteredSections() {
         JPanel sections = new JPanel();
         sections.setOpaque(false);
         sections.setLayout(new BoxLayout(sections, BoxLayout.Y_AXIS));
 
-        sections.add(
-                createSectionCard(
-                        "Dependency violations",
-                        result.dependencyViolations().size(),
-                        result.dependencyViolations(),
-                        !result.dependencyViolations().isEmpty()
-                )
-        );
+        List<ModulithDependencyAnalysis> visibleDependencies = new ArrayList<>();
+        if (verificationResult != null) {
+            for (ModulithDependencyAnalysis analysis : verificationResult.allDependencies()) {
+                if (matchesDependencyFilter(analysis)) {
+                    visibleDependencies.add(analysis);
+                }
+            }
+        }
 
-        sections.add(Box.createVerticalStrut(10));
+        List<String> visibleCycles = new ArrayList<>();
+        if (verificationResult != null && cyclesFilter != null && cyclesFilter.isSelected()) {
+            visibleCycles.addAll(filterSearch(verificationResult.cycles()));
+        }
 
-        sections.add(
-                createSectionCard(
-                        "Dependency cycles",
-                        result.cycles().size(),
-                        result.cycles(),
-                        !result.cycles().isEmpty()
-                )
-        );
+        boolean showDependencies = forbiddenFilter != null
+                && allowedFilter != null
+                && (forbiddenFilter.isSelected() || allowedFilter.isSelected() || namedInterfaceFilter.isSelected());
+        if (showDependencies) {
+            sections.add(createSectionCard(
+                    "Dependencies",
+                    visibleDependencies.size(),
+                    visibleDependencies,
+                    hasForbiddenDependency(visibleDependencies)
+            ));
+            sections.add(Box.createVerticalStrut(10));
+        }
 
-        content.add(sections, BorderLayout.NORTH);
+        if (cyclesFilter != null && cyclesFilter.isSelected()) {
+            sections.add(createSectionCard(
+                    "Dependency cycles",
+                    visibleCycles.size(),
+                    visibleCycles,
+                    !visibleCycles.isEmpty()
+            ));
+        }
 
+        if (!showDependencies && !cyclesFilter.isSelected()) {
+            JLabel empty = new JBLabel("No filters selected");
+            empty.setForeground(UIUtil.getContextHelpForeground());
+            empty.setBorder(JBUI.Borders.empty(8));
+            sections.add(empty);
+        }
+
+        return sections;
+    }
+
+    private boolean matchesDependencyFilter(@NotNull ModulithDependencyAnalysis analysis) {
+        if (searchField != null && !matchesSearch(analysis, searchField.getText())) {
+            return false;
+        }
+
+        boolean forbidden = forbiddenFilter != null && forbiddenFilter.isSelected() && analysis.isForbidden();
+        boolean namedInterface = namedInterfaceFilter != null
+                && namedInterfaceFilter.isSelected()
+                && isNamedInterfaceViolation(analysis);
+        boolean allowed = allowedFilter != null && allowedFilter.isSelected() && !analysis.isForbidden();
+        return forbidden || namedInterface || allowed;
+    }
+
+    private boolean isNamedInterfaceViolation(@NotNull ModulithDependencyAnalysis analysis) {
+        if (!analysis.isForbidden()) {
+            return false;
+        }
+
+        String qualifiedType = analysis.targetClass().getQualifiedName();
+        if (qualifiedType == null) {
+            return false;
+        }
+
+        return analysis.target().findNamedInterfaceForType(
+                qualifiedType,
+                analysis.targetPackage()
+        ) != null;
+    }
+
+    private boolean hasForbiddenDependency(@NotNull List<ModulithDependencyAnalysis> dependencies) {
+        for (ModulithDependencyAnalysis dependency : dependencies) {
+            if (dependency.isForbidden()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean matchesSearch(@NotNull ModulithDependencyAnalysis analysis, @NotNull String query) {
+        if (query.isBlank()) {
+            return true;
+        }
+        String text = dependencyDisplayText(analysis).toLowerCase(java.util.Locale.ROOT);
+        return text.contains(query.trim().toLowerCase(java.util.Locale.ROOT));
+    }
+
+    @NotNull
+    private List<String> filterSearch(@NotNull List<String> values) {
+        if (searchField == null || searchField.getText().isBlank()) {
+            return values;
+        }
+        String query = searchField.getText().trim().toLowerCase(java.util.Locale.ROOT);
+        List<String> filtered = new ArrayList<>();
+        for (String value : values) {
+            if (value.toLowerCase(java.util.Locale.ROOT).contains(query)) {
+                filtered.add(value);
+            }
+        }
+        return filtered;
+    }
+
+    @NotNull
+    private String dependencyDisplayText(@NotNull ModulithDependencyAnalysis analysis) {
+        String namedInterface = analysis.namedInterfaceName() == null
+                ? ""
+                : "  ::  " + analysis.namedInterfaceName();
+        return analysis.sourcePackage()
+                + "  →  "
+                + analysis.targetPackage()
+                + "  ::  "
+                + analysis.targetClass().getQualifiedName()
+                + namedInterface;
+    }
+
+    private void refreshFilteredResults() {
+        if (verificationResult == null || content == null || forbiddenFilter == null) {
+            return;
+        }
+        content.removeAll();
+        content.add(createFilterPanel(), BorderLayout.NORTH);
+        content.add(createFilteredSections(), BorderLayout.CENTER);
         revalidate();
         repaint();
     }
@@ -448,19 +697,7 @@ public final class ModulithVerificationPanel extends JPanel {
 
         for (Object value : values) {
             if (value instanceof ModulithDependencyAnalysis analysis) {
-                String namedInterface =
-                        analysis.namedInterfaceName() == null
-                                ? ""
-                                : "  ::  " + analysis.namedInterfaceName();
-
-                rows.add(
-                        analysis.sourcePackage()
-                                + "  →  "
-                                + analysis.targetPackage()
-                                + "  ::  "
-                                + analysis.targetClass().getQualifiedName()
-                                + namedInterface
-                );
+                rows.add(dependencyDisplayText(analysis));
             } else {
                 rows.add(String.valueOf(value));
             }
@@ -489,6 +726,12 @@ public final class ModulithVerificationPanel extends JPanel {
         boolean previousResultState = hasVerificationResult;
         verificationResult = null;
         hasVerificationResult = false;
+        forbiddenFilter = null;
+        allowedFilter = null;
+        cyclesFilter = null;
+        namedInterfaceFilter = null;
+        searchField = null;
+        filterPreset = null;
         firePropertyChange("verificationResult", previousResultState, false);
         summary.setText("Architecture not verified");
         summary.setForeground(UIUtil.getLabelForeground());
