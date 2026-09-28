@@ -277,7 +277,21 @@ public final class ModulithDependencyAnalyzer {
             status = ModulithDependencyAnalysis.Status.ALLOWED;
         }
 
-        ModulithDependencyReference sourceReference = createDependencyReference(reference);
+        String matchedRule = findMatchingRule(
+                source,
+                target,
+                qualifiedType,
+                targetPackage
+        );
+
+        ModulithDependencyReference sourceReference = createDependencyReference(
+                reference,
+                targetClass,
+                targetPackage,
+                matchedRule,
+                status,
+                apiViolation
+        );
         if (sourceReference == null) {
             return null;
         }
@@ -368,8 +382,71 @@ public final class ModulithDependencyAnalyzer {
     }
 
     @Nullable
+    private String findMatchingRule(
+            @NotNull ModulithModule source,
+            @NotNull ModulithModule target,
+            @NotNull String qualifiedType,
+            @NotNull String targetPackage) {
+
+        java.util.Set<String> override = ModulithSettings.getInstance(project)
+                .getDependencyOverrideMap()
+                .get(source.getPackageName());
+
+        if (override != null) {
+            for (String ruleText : override) {
+                if (ruleAllowsType(ruleText, target, qualifiedType, targetPackage)) {
+                    return ruleText.trim();
+                }
+            }
+            return null;
+        }
+
+        for (String ruleText : source.getAllowedDependencies()) {
+            if (ruleAllowsType(ruleText, target, qualifiedType, targetPackage)) {
+                return ruleText.trim();
+            }
+        }
+
+        return null;
+    }
+
+    private boolean ruleAllowsType(
+            @Nullable String ruleText,
+            @NotNull ModulithModule target,
+            @NotNull String qualifiedType,
+            @NotNull String targetPackage) {
+
+        ModulithModule.DependencyRule rule =
+                ModulithModule.DependencyRule.parse(ruleText);
+
+        if (rule == null || !target.matchesModuleId(rule.moduleId())) {
+            return false;
+        }
+
+        if (rule.interfaceId() == null) {
+            return targetPackage.equals(target.getPackageName());
+        }
+
+        if ("*".equals(rule.interfaceId())) {
+            return target.findNamedInterfaceForType(
+                    qualifiedType,
+                    targetPackage
+            ) != null;
+        }
+
+        NamedInterface namedInterface = target.findNamedInterface(rule.interfaceId());
+        return namedInterface != null
+                && namedInterface.contains(qualifiedType, targetPackage);
+    }
+
+    @Nullable
     private ModulithDependencyReference createDependencyReference(
-            @NotNull PsiJavaCodeReferenceElement reference) {
+            @NotNull PsiJavaCodeReferenceElement reference,
+            @NotNull PsiClass targetClass,
+            @NotNull String targetPackage,
+            @Nullable String matchedRule,
+            @NotNull ModulithDependencyAnalysis.Status status,
+            boolean apiViolation) {
         PsiFile sourceFile = reference.getContainingFile();
         if (sourceFile == null || sourceFile.getVirtualFile() == null) {
             return null;
@@ -390,11 +467,33 @@ public final class ModulithDependencyAnalyzer {
             ) + 1;
         }
 
+        String referencedType = targetClass.getName();
+        if (referencedType == null || referencedType.isEmpty()) {
+            referencedType = targetClass.getQualifiedName();
+        }
+        if (referencedType == null || referencedType.isEmpty()) {
+            referencedType = "Unknown type";
+        }
+
+        String displayStatus = apiViolation
+                ? "FORBIDDEN"
+                : switch (status) {
+            case FORBIDDEN -> "FORBIDDEN";
+            case NAMED_INTERFACE -> "NAMED INTERFACE";
+            case ALLOWED -> "ALLOWED";
+        };
+
         return new ModulithDependencyReference(
                 sourceFile.getVirtualFile(),
                 offset,
                 lineNumber,
-                sourceFile.getName() + ":" + lineNumber
+                sourceFile.getName() + ":" + lineNumber,
+                referencedType,
+                targetPackage,
+                matchedRule == null || matchedRule.isEmpty()
+                        ? "No matching allowedDependencies rule"
+                        : matchedRule,
+                displayStatus
         );
     }
 

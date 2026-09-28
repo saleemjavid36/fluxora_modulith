@@ -180,10 +180,107 @@ public final class ModulithModuleDetailsPanel extends JPanel {
         status.setForeground(statusColor(edgeStatus(dependency)));
 
         content.removeAll();
+        addDependencyDetails(dependency);
         addReferenceSection(dependency);
 
         revalidate();
         repaint();
+    }
+
+    private void addDependencyDetails(
+            @NotNull ModulithDependencyGraph.ModuleDependency dependency) {
+
+        addSectionHeader(
+                "Dependency details",
+                "Information for the selected dependency"
+        );
+
+        ModulithDependencyReference reference = dependency.references().isEmpty()
+                ? null
+                : dependency.references().get(0);
+
+        addDetailRow(
+                "Source",
+                moduleNameForPackage(dependency.sourcePackage())
+        );
+        addDetailRow(
+                "Target",
+                moduleNameForPackage(dependency.targetPackage())
+        );
+        addDetailRow(
+                "Referenced type",
+                reference == null || reference.referencedType().isEmpty()
+                        ? "—"
+                        : reference.referencedType()
+        );
+        addDetailRow(
+                "Source file",
+                reference == null
+                        ? "—"
+                        : reference.file().getName()
+        );
+        addDetailRow(
+                "Target package",
+                reference == null || reference.targetPackage().isEmpty()
+                        ? dependency.targetPackage()
+                        : reference.targetPackage()
+        );
+        addDetailRow(
+                "Rule",
+                reference == null || reference.rule().isEmpty()
+                        ? "—"
+                        : reference.rule()
+        );
+        addDetailRow(
+                "Status",
+                reference == null || reference.status().isEmpty()
+                        ? edgeStatus(dependency)
+                        : reference.status()
+        );
+
+        if (dependency.references().size() > 1) {
+            addDetailRow(
+                    "Selected reference",
+                    "1 of " + dependency.references().size()
+            );
+        }
+    }
+
+    @NotNull
+    private String moduleNameForPackage(@NotNull String packageName) {
+        if (graph != null) {
+            for (ModulithModule module : graph.getModules()) {
+                if (module.getPackageName().equals(packageName)) {
+                    return module.getName();
+                }
+            }
+        }
+        return packageName;
+    }
+
+    private void addDetailRow(
+            @NotNull String label,
+            @NotNull String value) {
+
+        JPanel row = new JPanel(new BorderLayout(8, 0));
+        row.setOpaque(false);
+        row.setBorder(JBUI.Borders.empty(3, 2));
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JBLabel labelComponent = new JBLabel(label + ":");
+        labelComponent.setForeground(UIUtil.getContextHelpForeground());
+        labelComponent.setFont(labelComponent.getFont().deriveFont(Font.PLAIN, 11.0f));
+
+        JBLabel valueComponent = new JBLabel(value);
+        valueComponent.setForeground(UIUtil.getLabelForeground());
+        valueComponent.setFont(valueComponent.getFont().deriveFont(Font.PLAIN, 12.0f));
+
+        row.add(labelComponent, BorderLayout.WEST);
+        row.add(valueComponent, BorderLayout.CENTER);
+
+        Dimension preferredSize = row.getPreferredSize();
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, preferredSize.height));
+        content.add(row);
     }
 
     private void addReferenceSection(
