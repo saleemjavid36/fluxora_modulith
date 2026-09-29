@@ -432,7 +432,9 @@ public final class ModulithDependencyGraphPanel extends JPanel {
             if (position == null) continue;
 
             boolean selected = module == selectedModule;
-            boolean hovered = module == hoveredModule;
+            boolean hovered = selectedModule == null
+                    && selectedDependency == null
+                    && module == hoveredModule;
             boolean dimmed = selectedModule != null && !isRelatedToSelection(module);
 
             int borderThickness = selected ? 3 : hovered ? 2 : 1;
@@ -472,8 +474,7 @@ public final class ModulithDependencyGraphPanel extends JPanel {
                 continue;
             }
 
-            boolean highlighted = isDependencyRelatedToSelection(dependency)
-                    || dependency == selectedDependency;
+            boolean highlighted = dependency == selectedDependency;
 
             boolean dimmed = selectedModule != null && !highlighted;
             boolean cyclic = graph.isCyclicEdge(dependency);

@@ -36,7 +36,8 @@ public final class ModulithExportArchitectureAction extends AnAction {
         JSON("JSON", "json"),
         MERMAID("Mermaid", "mmd"),
         PLANTUML("PlantUML", "puml"),
-        GRAPHVIZ("Graphviz DOT", "dot");
+        GRAPHVIZ("Graphviz DOT", "dot"),
+        HTML("HTML", "html");
 
         private final String label;
         private final String extension;
@@ -145,6 +146,7 @@ public final class ModulithExportArchitectureAction extends AnAction {
                     case MERMAID -> toMermaid(graph);
                     case PLANTUML -> toPlantUml(graph);
                     case GRAPHVIZ -> toGraphviz(graph);
+                    case HTML -> toHtml(graph);
                 };
 
                 try {
@@ -323,6 +325,88 @@ public final class ModulithExportArchitectureAction extends AnAction {
 
         result.append("}\n");
         return result.toString();
+    }
+
+
+    private static String toHtml(@NotNull ModulithDependencyGraph graph) {
+        StringBuilder html = new StringBuilder();
+        html.append("<!doctype html><html lang=\"en\"><head>")
+                .append("<meta charset=\"UTF-8\">")
+                .append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
+                .append("<title>Spring Modulith Architecture</title>")
+                .append("<style>")
+                .append("body{font-family:Inter,Segoe UI,Arial,sans-serif;margin:0;padding:32px;background:#f5f7fa;color:#1f2937}")
+                .append(".container{max-width:1200px;margin:0 auto}.header{margin-bottom:24px}.header h1{margin:0 0 8px}.muted{color:#6b7280}")
+                .append(".summary{display:flex;gap:12px;flex-wrap:wrap;margin:20px 0}.badge{padding:8px 12px;border-radius:8px;background:#fff;border:1px solid #d1d5db}")
+                .append(".section{background:#fff;border:1px solid #d1d5db;border-radius:12px;margin-top:20px;overflow:hidden}")
+                .append(".section h2{font-size:18px;margin:0;padding:16px 20px;border-bottom:1px solid #e5e7eb}")
+                .append("table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px 14px;border-bottom:1px solid #eef0f2;vertical-align:top}th{background:#f9fafb;font-weight:600}")
+                .append("tr:last-child td{border-bottom:0}.module-name{font-weight:600}.code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px}")
+                .append("</style></head><body><div class=\"container\">");
+
+        html.append("<div class=\"header\"><h1>Spring Modulith Architecture</h1>")
+                .append("<div class=\"muted\">Exported architecture model</div></div>");
+
+        html.append("<div class=\"summary\">")
+                .append("<div class=\"badge\"><strong>Modules:</strong> ")
+                .append(graph.getModules().size()).append("</div>")
+                .append("<div class=\"badge\"><strong>Dependencies:</strong> ")
+                .append(graph.getDependencies().size()).append("</div>")
+                .append("</div>");
+
+        html.append("<section class=\"section\"><h2>Modules</h2><table><thead><tr>")
+                .append("<th>Name</th><th>Package</th><th>Status</th><th>Named interfaces</th></tr></thead><tbody>");
+
+        for (ModulithModule module : graph.getModules()) {
+            html.append("<tr><td class=\"module-name\">")
+                    .append(escapeHtml(module.getName()))
+                    .append("</td><td class=\"code\">")
+                    .append(escapeHtml(module.getPackageName()))
+                    .append("</td><td>")
+                    .append(module.isOpen() ? "OPEN" : "CLOSED")
+                    .append(module.isAllowedDependenciesConfigured() ? " · explicit rules" : " · implicit dependencies")
+                    .append("</td><td>");
+
+            if (module.getNamedInterfaces().isEmpty()) {
+                html.append("—");
+            } else {
+                html.append("<ul>");
+                for (var namedInterface : module.getNamedInterfaces()) {
+                    html.append("<li>")
+                            .append(escapeHtml(namedInterface.getName()))
+                            .append("</li>");
+                }
+                html.append("</ul>");
+            }
+            html.append("</td></tr>");
+        }
+        html.append("</tbody></table></section>");
+
+        html.append("<section class=\"section\"><h2>Dependencies</h2><table><thead><tr>")
+                .append("<th>Source</th><th>Target</th><th>Kind</th><th>References</th></tr></thead><tbody>");
+
+        for (ModulithDependencyGraph.ModuleDependency dependency : graph.getDependencies()) {
+            html.append("<tr><td class=\"code\">")
+                    .append(escapeHtml(dependency.sourcePackage()))
+                    .append("</td><td class=\"code\">")
+                    .append(escapeHtml(dependency.targetPackage()))
+                    .append("</td><td>")
+                    .append(escapeHtml(edgeLabel(dependency)))
+                    .append("</td><td>")
+                    .append(dependency.referenceCount())
+                    .append("</td></tr>");
+        }
+        html.append("</tbody></table></section>");
+        html.append("</div></body></html>");
+        return html.toString();
+    }
+
+    private static String escapeHtml(@NotNull String value) {
+        return value.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
     }
 
     private static String edgeLabel(
