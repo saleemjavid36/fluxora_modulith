@@ -1,5 +1,6 @@
 package com.springmodulith.plugin.toolwindow;
 
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.project.Project;
@@ -39,28 +40,29 @@ public final class ModulithModuleNavigation {
             @NotNull Project project,
             @NotNull ModulithModule module) {
 
-        PsiDirectory directory = findPackageDirectory(
-                project,
-                module.getPackageName()
-        );
+        VirtualFile targetFile = ReadAction.compute(() -> {
+            PsiDirectory directory = findPackageDirectory(
+                    project,
+                    module.getPackageName()
+            );
 
-        if (directory == null) {
-            return;
-        }
+            if (directory == null || !directory.isValid()) {
+                return null;
+            }
 
-        PsiFile packageInfo = directory.findFile("package-info.java");
+            PsiFile packageInfo = directory.findFile("package-info.java");
 
-        if (packageInfo != null) {
+            if (packageInfo != null && packageInfo.getVirtualFile() != null) {
+                return packageInfo.getVirtualFile();
+            }
+
+            PsiFile javaFile = findFirstJavaFile(directory);
+            return javaFile != null ? javaFile.getVirtualFile() : null;
+        });
+
+        if (targetFile != null && targetFile.isValid()) {
             FileEditorManager.getInstance(project)
-                    .openFile(packageInfo.getVirtualFile(), true);
-            return;
-        }
-
-        PsiFile javaFile = findFirstJavaFile(directory);
-
-        if (javaFile != null) {
-            FileEditorManager.getInstance(project)
-                    .openFile(javaFile.getVirtualFile(), true);
+                    .openFile(targetFile, true);
         }
     }
 
@@ -68,27 +70,38 @@ public final class ModulithModuleNavigation {
             @NotNull Project project,
             @NotNull String qualifiedName) {
 
-        PsiClass clazz = JavaPsiFacade.getInstance(project).findClass(
-                qualifiedName,
-                GlobalSearchScope.projectScope(project)
-        );
+        NavigationTarget target = ReadAction.compute(() -> {
+            PsiClass clazz = JavaPsiFacade.getInstance(project).findClass(
+                    qualifiedName,
+                    GlobalSearchScope.projectScope(project)
+            );
 
-        if (clazz == null) {
-            return;
-        }
+            if (clazz == null) {
+                return null;
+            }
 
-        PsiFile containingFile = clazz.getContainingFile();
+            PsiFile containingFile = clazz.getContainingFile();
 
-        if (containingFile == null
-                || containingFile.getVirtualFile() == null) {
+            if (containingFile == null
+                    || containingFile.getVirtualFile() == null) {
+                return null;
+            }
+
+            return new NavigationTarget(
+                    containingFile.getVirtualFile(),
+                    clazz.getTextOffset()
+            );
+        });
+
+        if (target == null || !target.file().isValid()) {
             return;
         }
 
         OpenFileDescriptor descriptor =
                 new OpenFileDescriptor(
                         project,
-                        containingFile.getVirtualFile(),
-                        clazz.getTextOffset()
+                        target.file(),
+                        target.offset()
                 );
 
         FileEditorManager.getInstance(project)
@@ -120,13 +133,19 @@ public final class ModulithModuleNavigation {
             @NotNull PsiDirectory directory) {
 
         for (PsiFile file : directory.getFiles()) {
-            if ("java".equalsIgnoreCase(
-                    file.getVirtualFile().getExtension())) {
+            VirtualFile virtualFile = file.getVirtualFile();
 
+            if (virtualFile != null
+                    && "java".equalsIgnoreCase(virtualFile.getExtension())) {
                 return file;
             }
         }
 
         return null;
+    }
+
+    private record NavigationTarget(
+            @NotNull VirtualFile file,
+            int offset) {
     }
 }
