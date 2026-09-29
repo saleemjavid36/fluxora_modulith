@@ -61,6 +61,7 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
         exportArchitectureButton.setToolTipText(
                 "Export architecture as JSON, Mermaid, PlantUML, or Graphviz DOT"
         );
+        exportArchitectureButton.setFocusPainted(false);
 
         zoomOutButton.setToolTipText("Zoom out");
         zoomLabel.setToolTipText("Reset zoom to 100%");
@@ -311,7 +312,17 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
         );
 
         exportArchitectureButton.addActionListener(
-                e -> ModulithExportArchitectureAction.showExportMenu(project, exportArchitectureButton)
+                e -> {
+                    ModulithExportArchitectureAction.showExportMenu(
+                            project,
+                            exportArchitectureButton,
+                            verificationPanel
+                    );
+                    SwingUtilities.invokeLater(() -> {
+                        exportArchitectureButton.setFocusPainted(false);
+                        exportArchitectureButton.repaint();
+                    });
+                }
         );
 
         /*

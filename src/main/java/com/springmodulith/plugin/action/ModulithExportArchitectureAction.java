@@ -16,6 +16,7 @@ import com.intellij.openapi.vfs.VirtualFileWrapper;
 import com.springmodulith.plugin.configuration.ModulithProjectModelService;
 import com.springmodulith.plugin.model.ModulithDependencyGraph;
 import com.springmodulith.plugin.model.ModulithModule;
+import com.springmodulith.plugin.toolwindow.ModulithVerificationPanel;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.JMenuItem;
@@ -68,7 +69,17 @@ public final class ModulithExportArchitectureAction extends AnAction {
      */
     public static void showExportMenu(
             @NotNull Project project,
-            @NotNull Component owner) {
+            @NotNull Component owner,
+            @NotNull ModulithVerificationPanel verificationPanel) {
+        if (!verificationPanel.hasVerificationResult()) {
+            Messages.showInfoMessage(
+                    project,
+                    "Run Verify Architecture before exporting the architecture.",
+                    "Architecture Not Verified"
+            );
+            return;
+        }
+
         JPopupMenu popup = new JPopupMenu();
 
         for (ExportFormat format : ExportFormat.values()) {
