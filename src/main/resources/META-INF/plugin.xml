@@ -1,35 +1,62 @@
 <idea-plugin
         url="https://github.com/saleemjavid36/spring_modulithic_Asist"
 >
-    <id>com.springmodulith.plugin</id>
+    <id>com.fluxora.modulith</id>
 
-    <name>Spring Modulith Assistance</name>
+    <name>Fluxora Architecture Assistant</name>
 
     <vendor
             url="https://github.com/saleemjavid36"
-            email="saleemjavid360@gmail.com">Fluxora</vendor>
+            email="saleemjavid360@gmail.com">Fluxora
+    </vendor>
 
     <description><![CDATA[
-        Spring Modulith architecture assistance for IntelliJ IDEA.
-
+        <h2>Spring Modulith architecture analysis for IntelliJ IDEA.</h2>
         <p>
-            Detect modules, analyze module dependencies, enforce allowed dependencies,
-            validate API access, inspect named interfaces, and visualize your
-            application architecture directly in the IDE.
+        Fluxora Modulith helps Java and Spring developers understand, visualize, and enforce modular application boundaries directly inside IntelliJ IDEA.
         </p>
 
-        <p><b>Features</b></p>
+        <p>
+        Designed for projects using <strong>Spring Modulith</strong> concepts, Fluxora Modulith analyzes your project's package structure, module dependencies, <code>@ApplicationModule</code> configuration, <code>allowedDependencies</code>, named interfaces, and architectural boundaries.
+        </p>
+
+        <h3>Features</h3>
 
         <ul>
-            <li>Automatic Spring Modulith module detection</li>
-            <li>@ApplicationModule and allowedDependencies support</li>
-            <li>Cross-module dependency inspections</li>
-            <li>Named interface validation</li>
-            <li>Module dependency cycle detection</li>
-            <li>Event listener analysis</li>
-            <li>Architecture verification</li>
-            <li>Dependency graph visualization</li>
+        <li><strong>Spring Modulith module detection</strong> — Discover application modules from the current project structure.</li>
+        <li><strong>Module dependency analysis</strong> — Detect dependencies between recognized application modules.</li>
+        <li><strong>Architecture inspections</strong> — Identify unwanted cross-module dependencies directly in the editor.</li>
+        <li><strong>@ApplicationModule support</strong> — Understand explicit module configuration and dependency rules.</li>
+        <li><strong>allowedDependencies support</strong> — Validate dependencies against configured module boundaries.</li>
+        <li><strong>Named interfaces</strong> — Define and validate module APIs and exposed interfaces.</li>
+        <li><strong>Dependency cycle detection</strong> — Identify cycles between application modules.</li>
+        <li><strong>Module Graph</strong> — Visualize relationships between application modules.</li>
+        <li><strong>Module Structure</strong> — Explore packages and module boundaries from the IDE.</li>
+        <li><strong>Quick fixes</strong> — Resolve supported architecture issues directly through IntelliJ intentions.</li>
+        <li><strong>Module navigation</strong> — Navigate between modules, packages, and dependencies.</li>
+        <li><strong>Architecture verification</strong> — Verify module boundaries and dependency rules from a dedicated verification view.</li>
+        <li><strong>Architecture export</strong> — Export architecture information for documentation and analysis.</li>
         </ul>
+
+        <h3>Built for real Java projects</h3>
+
+        <p>
+        Fluxora Modulith works from the current IntelliJ project structure and Java PSI rather than relying on application-specific package names or business logic. It is designed to work with different Java and Spring projects following Spring Modulith-style modular architecture.
+        </p>
+
+        <h3>Getting started</h3>
+
+        <ol>
+        <li>Install Fluxora Modulith from JetBrains Marketplace.</li>
+        <li>Open a Java/Spring project.</li>
+        <li>Open the Fluxora Modulith tool window.</li>
+        <li>Explore your modules and dependencies.</li>
+        <li>Use inspections and architecture verification to identify boundary issues.</li>
+        </ol>
+
+        <p>
+        <a href="https://github.com/saleemjavid36">GitHub</a>
+        </p>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
@@ -118,7 +145,6 @@
         <projectConfigurable
                 instance="com.springmodulith.plugin.configuration.ModulithConfigurable"
                 displayName="Spring Modulith"/>
-
 
 
         <psi.referenceContributor
