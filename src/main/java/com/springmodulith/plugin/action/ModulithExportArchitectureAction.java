@@ -10,6 +10,8 @@ import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.openapi.vfs.VirtualFileWrapper;
 import com.springmodulith.plugin.configuration.ModulithProjectModelService;
 import com.springmodulith.plugin.model.ModulithDependencyGraph;
@@ -21,6 +23,8 @@ import javax.swing.JPopupMenu;
 import java.awt.Component;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -90,8 +94,10 @@ public final class ModulithExportArchitectureAction extends AnAction {
                 FileChooserFactory.getInstance()
                         .createSaveFileDialog(descriptor, project);
 
+        VirtualFile initialDirectory = findDownloadsDirectory(project);
+
         VirtualFileWrapper wrapper = dialog.save(
-                project.getBaseDir(),
+                initialDirectory,
                 "architecture." + format.extension
         );
 
@@ -164,6 +170,29 @@ public final class ModulithExportArchitectureAction extends AnAction {
                 );
             }
         }.queue();
+    }
+
+    /**
+     * Opens the export chooser in the user's Downloads directory when it
+     * exists. If Downloads is unavailable (for example on a customized
+     * environment), fall back to the project directory without changing the
+     * existing export behavior.
+     */
+    @NotNull
+    private static VirtualFile findDownloadsDirectory(@NotNull Project project) {
+        Path downloadsPath = Paths.get(
+                System.getProperty("user.home"),
+                "Downloads"
+        );
+
+        VirtualFile downloads = VirtualFileManager.getInstance()
+                .findFileByNioPath(downloadsPath);
+
+        if (downloads != null && downloads.isDirectory()) {
+            return downloads;
+        }
+
+        return project.getBaseDir();
     }
 
     private static String toJson(@NotNull ModulithDependencyGraph graph) {

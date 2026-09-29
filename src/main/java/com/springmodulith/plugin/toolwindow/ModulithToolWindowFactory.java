@@ -57,7 +57,6 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
         JButton zoomInButton = new JButton("+");
         JButton autoRefreshButton = new JButton("Auto Refresh: OFF");
         JButton refreshButton = new JButton("Refresh");
-        JButton exportButton = new JButton("Export JSON");
         JButton exportArchitectureButton = new JButton("Export Architecture");
         exportArchitectureButton.setToolTipText(
                 "Export architecture as JSON, Mermaid, PlantUML, or Graphviz DOT"
@@ -73,12 +72,10 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
         buttons.add(zoomInButton);
         buttons.add(autoRefreshButton);
         buttons.add(refreshButton);
-        buttons.add(exportButton);
         buttons.add(exportArchitectureButton);
 
         // Header actions are scoped to the tab where they are applicable.
         // Zoom controls belong to Module Graph; export actions belong to Verification.
-        exportButton.setVisible(false);
         exportArchitectureButton.setVisible(false);
 
         header.add(buttons, BorderLayout.EAST);
@@ -218,7 +215,6 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
             zoomOutButton.setVisible(moduleGraphSelected);
             zoomLabel.setVisible(moduleGraphSelected);
             zoomInButton.setVisible(moduleGraphSelected);
-            exportButton.setVisible(verificationSelected);
             exportArchitectureButton.setVisible(verificationSelected);
 
             buttons.revalidate();
@@ -312,10 +308,6 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
 
         refreshButton.addActionListener(
                 e -> refreshAction.run()
-        );
-
-        exportButton.addActionListener(
-                e -> verificationPanel.exportVerificationResult()
         );
 
         exportArchitectureButton.addActionListener(
