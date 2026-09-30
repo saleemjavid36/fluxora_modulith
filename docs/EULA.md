@@ -154,9 +154,13 @@ Unless otherwise required by applicable law, continued use of the Plugin after a
 
 ## 14. Governing Law and Dispute Resolution
 
-**[COMPLETE THIS SECTION WITH THE LAW AND DISPUTE-RESOLUTION TERMS THAT APPLY TO THE ACTUAL LEGAL OWNER OF FLUXORA BEFORE PUBLICATION.]**
+This EULA is governed by and construed in accordance with the laws of India, without regard to its conflict-of-law principles.
 
-The Developer should obtain appropriate legal advice before selecting governing law, jurisdiction, arbitration, or dispute-resolution language.
+Any dispute, controversy, or claim arising out of or relating to this EULA or the Plugin will be subject to the jurisdiction of the competent courts in India.
+
+Nothing in this Section limits any mandatory rights or protections that cannot lawfully be excluded or limited under the laws applicable to the Plugin User.
+
+If any provision of this EULA is held to be invalid or unenforceable by a competent authority, the remaining provisions will remain in full force and effect.
 
 ## 15. Contact
 
