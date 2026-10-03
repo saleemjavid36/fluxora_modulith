@@ -28,17 +28,15 @@ public final class ModulithProjectViewNodeDecorator implements ProjectViewNodeDe
         if (!(node instanceof PsiDirectoryNode directoryNode)) return;
 
         PsiDirectory directory = directoryNode.getValue();
-        if (directory == null || directory.getFiles().length == 0) return;
+        if (directory == null) return;
 
         PsiPackage pkg = JavaDirectoryService.getInstance().getPackage(directory);
         if (pkg == null || pkg.getQualifiedName().isEmpty()) return;
 
         Project project = directory.getProject();
         project.getService(ModulithProjectViewRefreshService.class);
-        PsiFile packageInfo = directory.findFile("package-info.java");
-        PsiFile contextFile = packageInfo != null
-                ? packageInfo
-                : directory.getFiles()[0];
+        PsiFile contextFile = findContextFile(directory);
+        if (contextFile == null) return;
 
         ModulithModule module = ReadAction.compute(() ->
                 new ModulithModuleResolver(project)
@@ -50,7 +48,24 @@ public final class ModulithProjectViewNodeDecorator implements ProjectViewNodeDe
                 resolveIcon(directory, pkg.getQualifiedName(), module)
         );
         data.setIcon(icon);
-        data.setLocationString(module.isOpen() ? "open" : "closed");
+        data.setLocationString(null);
+    }
+
+    private PsiFile findContextFile(@NotNull PsiDirectory directory) {
+        PsiDirectory current = directory;
+
+        while (current != null) {
+            PsiFile packageInfo = current.findFile("package-info.java");
+            if (packageInfo != null) return packageInfo;
+
+            for (PsiFile file : current.getFiles()) {
+                if (file.getName().endsWith(".java")) return file;
+            }
+
+            current = current.getParentDirectory();
+        }
+
+        return null;
     }
 
     @NotNull
