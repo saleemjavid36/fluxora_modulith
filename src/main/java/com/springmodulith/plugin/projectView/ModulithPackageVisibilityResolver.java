@@ -21,7 +21,6 @@ final class ModulithPackageVisibilityResolver {
             @NotNull String packageName,
             @NotNull ModulithModule module) {
         return packageName.equals(module.getPackageName())
-                || module.isOpen()
                 || hasNamedInterface(directory, module.getPackageName());
     }
 
