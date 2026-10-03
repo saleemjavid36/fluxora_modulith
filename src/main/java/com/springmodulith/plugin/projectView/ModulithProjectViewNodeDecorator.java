@@ -7,6 +7,7 @@ import com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.IconLoader;
+import com.intellij.util.ui.UIUtil;
 import com.intellij.psi.JavaDirectoryService;
 import com.intellij.psi.PsiDirectory;
 import com.intellij.psi.PsiFile;
@@ -19,9 +20,17 @@ import javax.swing.Icon;
 
 public final class ModulithProjectViewNodeDecorator implements ProjectViewNodeDecorator {
     private static final Icon PACKAGE_PUBLIC =
-            IconLoader.getIcon("/icons/packagePublic.svg", ModulithProjectViewNodeDecorator.class);
+            IconLoader.getIcon("/icons/fluxoraPublicPackage.svg", ModulithProjectViewNodeDecorator.class);
+    private static final Icon PACKAGE_PUBLIC_DARK =
+            IconLoader.getIcon("/icons/fluxoraPublicPackage_dark.svg", ModulithProjectViewNodeDecorator.class);
     private static final Icon PACKAGE_INTERNAL =
-            IconLoader.getIcon("/icons/packageInternal.svg", ModulithProjectViewNodeDecorator.class);
+            IconLoader.getIcon("/icons/fluxoraInternalIcon.svg", ModulithProjectViewNodeDecorator.class);
+    private static final Icon PACKAGE_INTERNAL_DARK =
+            IconLoader.getIcon("/icons/fluxoraInternalPackage_dark.svg", ModulithProjectViewNodeDecorator.class);
+    private static final Icon PACKAGE_NESTED =
+            IconLoader.getIcon("/icons/fluxoraNestedPackage.svg", ModulithProjectViewNodeDecorator.class);
+    private static final Icon PACKAGE_NESTED_DARK =
+            IconLoader.getIcon("/icons/fluxoraNestedPackage_dark.svg", ModulithProjectViewNodeDecorator.class);
 
     @Override
     public void decorate(@NotNull ProjectViewNode<?> node, @NotNull PresentationData data) {
@@ -73,9 +82,38 @@ public final class ModulithProjectViewNodeDecorator implements ProjectViewNodeDe
             @NotNull PsiDirectory directory,
             @NotNull String packageName,
             @NotNull ModulithModule module) {
-        return ModulithPackageVisibilityResolver.isPublic(directory, packageName, module)
-                ? PACKAGE_PUBLIC
-                : PACKAGE_INTERNAL;
+        boolean darkTheme = UIUtil.isUnderDarcula();
+
+        // A module root nested inside another module is represented by the
+        // dedicated nested-package icon. This preserves the existing module
+        // detection behavior while making the previously unused nested icon
+        // visible in the Project View.
+        if (packageName.equals(module.getPackageName()) && isNestedModule(module, directory)) {
+            return darkTheme ? PACKAGE_NESTED_DARK : PACKAGE_NESTED;
+        }
+
+        boolean exposed = ModulithPackageVisibilityResolver.isPublic(
+                directory, packageName, module);
+
+        return exposed
+                ? (darkTheme ? PACKAGE_PUBLIC_DARK : PACKAGE_PUBLIC)
+                : (darkTheme ? PACKAGE_INTERNAL_DARK : PACKAGE_INTERNAL);
+    }
+
+    private boolean isNestedModule(
+            @NotNull ModulithModule module,
+            @NotNull PsiDirectory directory) {
+        String modulePackage = module.getPackageName();
+
+        for (ModulithModule candidate :
+                new ModulithModuleResolver(directory.getProject()).resolveModules()) {
+            if (candidate != module
+                    && modulePackage.startsWith(candidate.getPackageName() + ".")) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
 }
