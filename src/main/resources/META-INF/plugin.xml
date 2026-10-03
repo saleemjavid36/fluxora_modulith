@@ -147,6 +147,10 @@
                 displayName="Spring Modulith"/>
 
 
+        <editorFactoryMouseListener
+                implementation="com.springmodulith.plugin.projectView.ModulithAllowedDependencyProjectViewListener"
+                order="first"/>
+
         <psi.referenceContributor
                 language="JAVA"
                 implementation="com.springmodulith.plugin.codeInsight.ModulithDependencyReferenceContributor"/>
