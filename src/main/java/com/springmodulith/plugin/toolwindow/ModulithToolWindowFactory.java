@@ -34,6 +34,9 @@ public final class ModulithToolWindowFactory implements ToolWindowFactory {
             @NotNull Project project,
             @NotNull ToolWindow toolWindow) {
 
+        // Keep the tool-window stripe label branded and make the global shortcut discoverable.
+        toolWindow.setStripeTitle("Fluxora Modulith Ctrl+Alt+Shift+M");
+
         JPanel root = new JBPanel<>(new BorderLayout(8, 8));
         root.setBorder(JBUI.Borders.empty(8));
 

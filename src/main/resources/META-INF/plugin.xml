@@ -76,8 +76,8 @@
         </action>
         <action id="com.springmodulith.plugin.toggleToolWindow"
                 class="com.springmodulith.plugin.action.ModulithToggleToolWindowAction"
-                text="Toggle Spring Modulith Tool Window"
-                description="Open or close the Spring Modulith tool window">
+                text="Toggle Fluxora Modulith Tool Window"
+                description="Open or close the Fluxora Modulith tool window">
 
             <add-to-group group-id="ToolsMenu" anchor="last"/>
 
@@ -162,7 +162,8 @@
                 implementation="com.springmodulith.plugin.projectView.ModulithProjectViewNodeDecorator"/>
 
         <toolWindow
-                id="Spring Modulith"
+                id="Fluxora Modulith"
+                icon="/icons/fluxoraModulithToolWindow.svg"
                 anchor="right"
                 factoryClass="com.springmodulith.plugin.toolwindow.ModulithToolWindowFactory"/>
 
