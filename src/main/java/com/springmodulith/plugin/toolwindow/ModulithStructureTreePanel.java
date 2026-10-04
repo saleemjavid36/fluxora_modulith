@@ -18,6 +18,7 @@ import com.springmodulith.plugin.model.ModulithDependencyGraph;
 import com.springmodulith.plugin.model.ModulithModule;
 import com.springmodulith.plugin.model.NamedInterface;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -308,22 +309,26 @@ public final class ModulithStructureTreePanel extends JPanel {
         rootNode.removeAllChildren();
 
         /*
-         * Keep the structure view intentionally close to IntelliJ's
-         * Spring Modulith module structure: modules are the primary
-         * nodes and only their Modulith metadata is shown underneath.
-         * Package/class discovery is deliberately left out of this view;
-         * those details are available from the selected module/details
-         * panels and the graph view.
+         * Keep the structure view module-centric, but preserve the actual
+         * package hierarchy. Nested Spring Modulith modules therefore appear
+         * below their parent module instead of as unrelated root entries.
          */
         List<ModulithModule> modules =
                 new ArrayList<>(graph.getModules());
 
         modules.sort(
                 Comparator.comparing(
-                        ModulithModule::getName,
+                        ModulithModule::getPackageName,
                         String.CASE_INSENSITIVE_ORDER
                 )
         );
+
+        rootNode.setUserObject(
+                resolveStructureRootName(modules)
+        );
+
+        java.util.Map<String, DefaultMutableTreeNode> moduleNodes =
+                new java.util.LinkedHashMap<>();
 
         for (ModulithModule module : modules) {
             DefaultMutableTreeNode moduleNode =
@@ -331,8 +336,37 @@ public final class ModulithStructureTreePanel extends JPanel {
                             new ModuleNode(module)
                     );
 
-            rootNode.add(moduleNode);
-            buildModuleTree(moduleNode, module);
+            moduleNodes.put(module.getPackageName(), moduleNode);
+        }
+
+        for (ModulithModule module : modules) {
+            DefaultMutableTreeNode moduleNode =
+                    moduleNodes.get(module.getPackageName());
+
+            ModulithModule parent =
+                    findParentModule(module, modules);
+
+            if (parent == null) {
+                rootNode.add(moduleNode);
+            } else {
+                DefaultMutableTreeNode parentNode =
+                        moduleNodes.get(parent.getPackageName());
+
+                if (parentNode == null) {
+                    rootNode.add(moduleNode);
+                } else {
+                    parentNode.add(moduleNode);
+                }
+            }
+        }
+
+        // Add each module's existing metadata after the hierarchy is built so
+        // nested modules remain visually grouped directly under their parent.
+        for (ModulithModule module : modules) {
+            buildModuleTree(
+                    moduleNodes.get(module.getPackageName()),
+                    module
+            );
         }
 
         treeModel.reload();
@@ -457,6 +491,78 @@ public final class ModulithStructureTreePanel extends JPanel {
                 }
             }
         }
+    }
+
+    private String resolveStructureRootName(
+            @NotNull List<ModulithModule> modules) {
+
+        if (modules.isEmpty()) {
+            return "Spring Modulith Modules";
+        }
+
+        String root = modules.get(0).getPackageName();
+
+        for (int i = 1; i < modules.size(); i++) {
+            root = commonPackagePrefix(
+                    root,
+                    modules.get(i).getPackageName()
+            );
+
+            if (root.isEmpty()) {
+                break;
+            }
+        }
+
+        return root.isEmpty()
+                ? "Spring Modulith Modules"
+                : root;
+    }
+
+    @NotNull
+    private String commonPackagePrefix(
+            @NotNull String first,
+            @NotNull String second) {
+
+        String[] firstParts = first.split("\\.");
+        String[] secondParts = second.split("\\.");
+        int length = Math.min(firstParts.length, secondParts.length);
+        int common = 0;
+
+        while (common < length
+                && firstParts[common].equals(secondParts[common])) {
+            common++;
+        }
+
+        if (common == 0) {
+            return "";
+        }
+
+        return String.join(".", java.util.Arrays.copyOf(firstParts, common));
+    }
+
+    @Nullable
+    private ModulithModule findParentModule(
+            @NotNull ModulithModule child,
+            @NotNull List<ModulithModule> modules) {
+
+        ModulithModule parent = null;
+
+        for (ModulithModule candidate : modules) {
+            if (candidate == child
+                    || candidate.getPackageName().equals(child.getPackageName())
+                    || !child.getPackageName().startsWith(
+                    candidate.getPackageName() + ".")) {
+                continue;
+            }
+
+            if (parent == null
+                    || candidate.getPackageName().length()
+                    > parent.getPackageName().length()) {
+                parent = candidate;
+            }
+        }
+
+        return parent;
     }
 
     /*
@@ -1732,8 +1838,6 @@ public final class ModulithStructureTreePanel extends JPanel {
 
                 setText(
                         moduleNode.module().getName()
-                                + "  "
-                                + moduleNode.module().getPackageName()
                 );
 
                 component.setFont(
