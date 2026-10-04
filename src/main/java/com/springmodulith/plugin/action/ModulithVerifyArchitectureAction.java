@@ -12,7 +12,7 @@ public final class ModulithVerifyArchitectureAction extends AnAction {
     @Override public void actionPerformed(@NotNull AnActionEvent event) {
         Project project = event.getProject();
         if (project == null) return;
-        ToolWindow window = ToolWindowManager.getInstance(project).getToolWindow("Spring Modulith");
+        ToolWindow window = ToolWindowManager.getInstance(project).getToolWindow("Fluxora Modulith");
         if (window != null) {
             window.show(() -> project.getService(ModulithToolWindowController.class).showVerification());
         }

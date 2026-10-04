@@ -9,7 +9,7 @@ import org.jetbrains.annotations.NotNull;
 
 public final class ModulithToggleToolWindowAction extends AnAction {
 
-    private static final String TOOL_WINDOW_ID = "Spring Modulith";
+    private static final String TOOL_WINDOW_ID = "Fluxora Modulith";
 
     @Override
     public void actionPerformed(@NotNull AnActionEvent event) {
