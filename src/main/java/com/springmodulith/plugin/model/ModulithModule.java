@@ -99,7 +99,8 @@ public final class ModulithModule {
              * "student" -> root API only.
              */
             if (rule.interfaceId() == null) {
-                if (targetPackage.equals(target.getPackageName())) {
+                if (target.isOpen()
+                        || targetPackage.equals(target.getPackageName())) {
                     return true;
                 }
 
