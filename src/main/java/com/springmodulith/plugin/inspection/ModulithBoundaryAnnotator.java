@@ -298,8 +298,18 @@ public final class ModulithBoundaryAnnotator implements Annotator {
                  * as "service", an existing "auth" dependency must still
                  * produce the dependency fix "auth :: service".
                  */
-                return analysis.target().isOpen()
-                        || targetPackage.equals(analysis.target().getPackageName());
+                if (analysis.target().isOpen()
+                        || targetPackage.equals(analysis.target().getPackageName())) {
+                    return true;
+                }
+
+                // A bare dependency is sufficient to reach a CLOSED
+                // module, but the internal package is still an API
+                // violation. Once that package is exposed, apiViolation()
+                // becomes false and this method must return false so the
+                // precise named-interface dependency (for example
+                // "reporting :: service") can be suggested.
+                return analysis.apiViolation();
             }
 
             // A wildcard dependency permits explicitly declared named
