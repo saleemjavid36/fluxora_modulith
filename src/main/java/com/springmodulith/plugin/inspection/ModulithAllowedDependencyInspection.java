@@ -93,12 +93,7 @@ public final class ModulithAllowedDependencyInspection extends AbstractBaseJavaL
 
         ModulithModule target =
                 modules.stream()
-                        .filter(m ->
-                                m.getName().equals(rule.moduleId())
-                                        || m.getPackageName().equals(
-                                        rule.moduleId()
-                                )
-                        )
+                        .filter(m -> m.matchesModuleId(rule.moduleId()))
                         .findFirst()
                         .orElse(null);
 
