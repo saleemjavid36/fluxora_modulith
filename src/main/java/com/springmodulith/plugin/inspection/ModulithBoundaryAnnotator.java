@@ -1,10 +1,13 @@
 package com.springmodulith.plugin.inspection;
 
 import com.intellij.codeInsight.intention.IntentionAction;
+import com.intellij.codeInsight.intention.IntentionActionDelegate;
+import com.intellij.codeInsight.intention.LowPriorityAction;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.lang.annotation.AnnotationHolder;
 import com.intellij.lang.annotation.Annotator;
 import com.intellij.lang.annotation.HighlightSeverity;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
 import com.intellij.openapi.editor.colors.CodeInsightColors;
 import com.intellij.openapi.editor.colors.EditorColorsManager;
 import com.intellij.openapi.editor.colors.EditorColorsScheme;
@@ -17,6 +20,7 @@ import com.intellij.psi.PsiJavaCodeReferenceElement;
 import com.intellij.psi.PsiJavaFile;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiField;
+import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiMethod;
 import com.intellij.psi.PsiStatement;
 import com.intellij.psi.PsiWhiteSpace;
@@ -60,13 +64,20 @@ public final class ModulithBoundaryAnnotator implements Annotator {
                 packageName(targetClass);
 
         /*
-         * If the type/package is already exposed, there is no
-         * API exposure quick fix to offer.
+         * The package should not be offered again when it is already
+         * explicitly exposed through a named interface.
+         *
+         * OPEN modules expose packages implicitly, but that must not hide
+         * the optional "Expose package ... as named interface ..." action.
+         * Keep the root package behavior unchanged: the module root is
+         * already part of the module's public surface and is not converted
+         * into a named interface by this quick fix.
          */
-        if (analysis.target().exposes(
+        if (targetPackage.equals(analysis.target().getPackageName())
+                || analysis.target().findNamedInterfaceForType(
                 qualifiedType,
                 targetPackage
-        )) {
+        ) != null) {
             return null;
         }
 
@@ -174,46 +185,40 @@ public final class ModulithBoundaryAnnotator implements Annotator {
                 );
 
         /*
-         * Add the most appropriate quick fix directly to the
-         * IntelliJ annotation popup.
+         * Keep the dependency quick fix as the primary action whenever
+         * the source module has an unallowed dependency.
          *
-         * API exposure has priority over dependency configuration.
-         *
-         * Example:
-         *
-         * StudentDto is inside:
-         *
-         *     student.dto
-         *
-         * but student.dto is not exposed.
-         *
-         * The correct fix is:
-         *
-         *     Expose package '...student.dto'
-         *     as named interface 'dto'
-         *
-         * NOT:
-         *
-         *     Add 'student' as an allowed dependency
-         *
-         * because 'student' only permits the module root API.
+         * The API exposure action is deliberately added after it. This
+         * makes it an additional action instead of replacing the
+         * dependency fix. In particular, OPEN modules may have no API
+         * violation while the dependency is still forbidden, so the API
+         * action must be considered independently of apiViolation.
          */
-        if (apiViolation) {
-
-            IntentionAction apiFix =
-                    createApiPopupFix(analysis);
-
-            if (apiFix != null) {
-                annotation.withFix(apiFix);
-            }
-
-        } else if (dependencyViolation) {
+        if (dependencyViolation) {
 
             IntentionAction dependencyFix =
                     createAllowedDependencyPopupFix(analysis);
 
             if (dependencyFix != null) {
                 annotation.withFix(dependencyFix);
+            }
+
+            IntentionAction apiFix =
+                    createApiPopupFix(analysis);
+
+            if (apiFix != null) {
+                annotation.withFix(
+                        new LowPriorityApiPopupFix(apiFix)
+                );
+            }
+
+        } else if (apiViolation) {
+
+            IntentionAction apiFix =
+                    createApiPopupFix(analysis);
+
+            if (apiFix != null) {
+                annotation.withFix(apiFix);
             }
         }
 
@@ -620,20 +625,109 @@ public final class ModulithBoundaryAnnotator implements Annotator {
         /*
          * ---------------------------------------------------------
          * CASE 3:
-         * Internal type which is not exposed through a named
-         * interface and is not part of the module root API.
+         * Target type is inside the target module but is not
+         * associated with a named interface.
          *
-         * Do NOT suggest:
+         * When the target module is not represented by a named
+         * interface for this type, still offer the module-level
+         * dependency rule. This is especially useful for OPEN
+         * modules, where the type is accessible but the source
+         * module still has to explicitly allow the dependency.
          *
-         *     student
+         * Example:
          *
-         * because that would incorrectly grant root API access.
+         *     auth -> account.api.AccountApi
          *
-         * The API quick fix should handle exposing this type/package.
+         * Suggest:
+         *
+         *     Add 'account' as an allowed dependency of the 'auth' module
          * ---------------------------------------------------------
          */
-        return null;
+        String dependency = target.getName();
+
+        if (hasAllowedDependency(
+                source,
+                dependency
+        )) {
+            return null;
+        }
+
+        String fixName =
+                "Add '"
+                        + dependency
+                        + "' as an allowed dependency of the '"
+                        + source.getName()
+                        + "' module";
+
+        return new AddAllowedDependencyFix(
+                dependency,
+                source.getPackageName(),
+                fixName
+        );
     }
+
+    /**
+     * Keeps the optional API-exposure action available without allowing it
+     * to replace the dependency action as the primary quick fix.
+     * IntelliJ uses {@link LowPriorityAction} to place this action lower in
+     * the available fixes, which keeps it under the secondary actions when
+     * the dependency fix is present.
+     */
+    private static final class LowPriorityApiPopupFix
+            implements IntentionAction, IntentionActionDelegate, LowPriorityAction {
+
+        private final IntentionAction delegate;
+
+        private LowPriorityApiPopupFix(
+                @NotNull IntentionAction delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public @NotNull IntentionAction getDelegate() {
+            return delegate;
+        }
+
+        @Override
+        public @NotNull String getText() {
+            return delegate.getText();
+        }
+
+        @Override
+        public @NotNull String getFamilyName() {
+            return delegate.getFamilyName();
+        }
+
+        @Override
+        public boolean isAvailable(
+                @NotNull Project project,
+                com.intellij.openapi.editor.Editor editor,
+                @NotNull PsiFile file) {
+            return delegate.isAvailable(project, editor, file);
+        }
+
+        @Override
+        public void invoke(
+                @NotNull Project project,
+                com.intellij.openapi.editor.Editor editor,
+                @NotNull PsiFile file) {
+            delegate.invoke(project, editor, file);
+        }
+
+        @Override
+        public boolean startInWriteAction() {
+            return delegate.startInWriteAction();
+        }
+
+        @Override
+        public @NotNull IntentionPreviewInfo generatePreview(
+                @NotNull Project project,
+                @NotNull com.intellij.openapi.editor.Editor editor,
+                @NotNull PsiFile file) {
+            return delegate.generatePreview(project, editor, file);
+        }
+    }
+
     private static boolean hasAllowedDependency(
             @NotNull ModulithModule source,
             @NotNull String dependency) {

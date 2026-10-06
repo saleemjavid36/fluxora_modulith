@@ -155,9 +155,14 @@ public final class ModulithDependencyAnalyzer {
                     continue;
                 }
 
-                // "student" -> root API only
+                // "student" -> the target module itself.
+                // OPEN modules expose their packages implicitly, so an
+                // allowed dependency on an OPEN module permits access to
+                // its internal packages as well. CLOSED modules retain
+                // the existing root-package-only behavior.
                 if (rule.interfaceId() == null) {
-                    if (targetPackage.equals(target.getPackageName())) {
+                    if (target.isOpen()
+                            || targetPackage.equals(target.getPackageName())) {
                         return true;
                     }
 
