@@ -234,16 +234,22 @@ public final class ModulithBoundaryAnnotator implements Annotator {
                             "ModulithApiUsage"
                     )
             );
-        } else if (apiViolation) {
-            annotation.withFix(
-                    new SuppressModulithInspectionFix(
-                            "ModulithApiUsage"
-                    )
-            );
         } else if (dependencyViolation) {
             annotation.withFix(
                     new SuppressModulithInspectionFix(
                             "ModulithDependency"
+                    )
+            );
+        } else if (apiViolation
+                && !hasAllowedModuleDependency(analysis)) {
+            /*
+             * When the module dependency is already allowed, API exposure
+             * is the only actionable issue. Keep the popup focused on the
+             * concrete API-exposure fix instead of offering suppression.
+             */
+            annotation.withFix(
+                    new SuppressModulithInspectionFix(
+                            "ModulithApiUsage"
                     )
             );
         }
@@ -254,12 +260,91 @@ public final class ModulithBoundaryAnnotator implements Annotator {
     private static boolean isAllowedDependency(
             @NotNull ModulithDependencyAnalysis analysis) {
 
-        return !analysis.source().isAllowedDependenciesConfigured()
-                || analysis.source().allowsType(
-                analysis.targetClass().getQualifiedName(),
-                packageName(analysis.targetClass()),
-                analysis.target()
-        );
+        if (!analysis.source().isAllowedDependenciesConfigured()) {
+            return true;
+        }
+
+        String qualifiedType = analysis.targetClass().getQualifiedName();
+        if (qualifiedType == null) {
+            return false;
+        }
+
+        String targetPackage = packageName(analysis.targetClass());
+
+        for (String dependency : analysis.source().getAllowedDependencies()) {
+            ModulithModule.DependencyRule rule =
+                    ModulithModule.DependencyRule.parse(dependency);
+
+            if (rule == null
+                    || !analysis.target().matchesModuleId(rule.moduleId())) {
+                continue;
+            }
+
+            // A module-level dependency permits the module dependency itself.
+            // API exposure is checked separately by apiViolation(). This is
+            // important for CLOSED modules:
+            //   allowedDependencies = {"auth"}
+            //   access auth.service.AuthenticationService
+            // must be reported as an API violation, not as a second dependency
+            // violation.
+            if (rule.interfaceId() == null) {
+                /*
+                 * A bare module dependency exposes the target module's
+                 * root API. An OPEN module exposes its packages implicitly,
+                 * but a CLOSED module still requires a qualified named
+                 * interface for non-root packages.
+                 *
+                 * Therefore, after a CLOSED module exposes a package such
+                 * as "service", an existing "auth" dependency must still
+                 * produce the dependency fix "auth :: service".
+                 */
+                return analysis.target().isOpen()
+                        || targetPackage.equals(analysis.target().getPackageName());
+            }
+
+            // A wildcard dependency permits explicitly declared named
+            // interfaces, while the API check still handles unexposed types.
+            if ("*".equals(rule.interfaceId())) {
+                if (analysis.target().findNamedInterfaceForType(
+                        qualifiedType,
+                        targetPackage
+                ) != null) {
+                    return true;
+                }
+                continue;
+            }
+
+            NamedInterface namedInterface =
+                    analysis.target().findNamedInterface(rule.interfaceId());
+
+            if (namedInterface != null
+                    && namedInterface.contains(qualifiedType, targetPackage)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean hasAllowedModuleDependency(
+            @NotNull ModulithDependencyAnalysis analysis) {
+
+        if (!analysis.source().isAllowedDependenciesConfigured()) {
+            return true;
+        }
+
+        for (String dependency : analysis.source().getAllowedDependencies()) {
+            ModulithModule.DependencyRule rule =
+                    ModulithModule.DependencyRule.parse(dependency);
+
+            if (rule != null
+                    && rule.interfaceId() == null
+                    && analysis.target().matchesModuleId(rule.moduleId())) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     @NotNull

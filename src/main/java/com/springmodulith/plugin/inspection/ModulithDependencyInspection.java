@@ -245,10 +245,30 @@ public final class ModulithDependencyInspection
         );
 
         /*
-         * Let the standard IntelliJ suppression machinery handle the
-         * actual suppression syntax for the current Java context.
+         * Keep suppression for genuine dependency violations. When the
+         * module dependency is already allowed and the remaining violation
+         * is only API exposure, the editor should offer the concrete
+         * exposure action without adding a suppression action.
          */
-        fixes.add(new SuppressModulithInspectionFix("ModulithDependency"));
+        boolean moduleDependencyAllowed = false;
+        if (source.isAllowedDependenciesConfigured()) {
+            for (String configuredDependency : source.getAllowedDependencies()) {
+                ModulithModule.DependencyRule rule =
+                        ModulithModule.DependencyRule.parse(configuredDependency);
+                if (rule != null
+                        && rule.interfaceId() == null
+                        && target.matchesModuleId(rule.moduleId())) {
+                    moduleDependencyAllowed = true;
+                    break;
+                }
+            }
+        } else {
+            moduleDependencyAllowed = true;
+        }
+
+        if (!dependency.apiViolation() || !moduleDependencyAllowed) {
+            fixes.add(new SuppressModulithInspectionFix("ModulithDependency"));
+        }
 
         return fixes.toArray(new LocalQuickFix[0]);
     }
