@@ -36,6 +36,12 @@ intellijPlatform {
         ideaVersion {
             sinceBuild = "253"
         }
+        changeNotes = """
+        <h2>Version 2.1.0</h2>
+        <ul>
+            <li>Added nested Spring Modulith module support.</li>
+        </ul>
+    """.trimIndent()
     }
 }
 
