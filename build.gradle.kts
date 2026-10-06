@@ -39,7 +39,13 @@ intellijPlatform {
         changeNotes = """
         <h2>Version 2.1.0</h2>
         <ul>
-            <li>Added nested Spring Modulith module support.</li>
+            <li>Added support for nested and deeply nested Spring Modulith modules.</li>
+            <li>Added hierarchical dependency identifiers such as <code>account.nested</code> and <code>account.nested.deepNested1</code>.</li>
+            <li>Added support for named-interface dependencies such as <code>account.nested.deepNested1 :: service</code>.</li>
+            <li>Improved dependency validation for OPEN and CLOSED modules.</li>
+            <li>Improved API exposure suggestions for internal packages of CLOSED modules.</li>
+            <li>Improved quick-fix suggestions for allowed module and named-interface dependencies.</li>
+            <li>Improved dependency validation consistency for nested module hierarchies.</li>
         </ul>
     """.trimIndent()
     }
