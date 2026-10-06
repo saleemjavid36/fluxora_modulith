@@ -202,7 +202,25 @@ public final class ModulithModule {
     }
 
     public boolean matchesModuleId(@NotNull String id) {
-        return name.equals(id) || packageName.equals(id);
+        if (name.equals(id) || packageName.equals(id)) {
+            return true;
+        }
+
+        /*
+         * Nested Modulith modules are represented in allowedDependencies
+         * by their logical module path, for example:
+         *
+         *     account.nested
+         *     account.nested.deepNested1
+         *
+         * while the PSI package is usually fully qualified, for example:
+         *
+         *     com.sample.modulith.account.nested
+         *
+         * Accept the logical suffix without changing the existing short-name
+         * or fully-qualified-package matching used by top-level modules.
+         */
+        return packageName.endsWith("." + id);
     }
 
     @Override

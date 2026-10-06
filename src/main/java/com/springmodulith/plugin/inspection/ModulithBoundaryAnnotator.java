@@ -14,16 +14,7 @@ import com.intellij.openapi.editor.colors.EditorColorsScheme;
 import com.intellij.openapi.editor.markup.EffectType;
 import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.project.Project;
-import com.intellij.psi.PsiElement;
-import com.intellij.psi.PsiImportStatement;
-import com.intellij.psi.PsiJavaCodeReferenceElement;
-import com.intellij.psi.PsiJavaFile;
-import com.intellij.psi.PsiClass;
-import com.intellij.psi.PsiField;
-import com.intellij.psi.PsiFile;
-import com.intellij.psi.PsiMethod;
-import com.intellij.psi.PsiStatement;
-import com.intellij.psi.PsiWhiteSpace;
+import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.springmodulith.plugin.analyzer.ModulithDependencyAnalyzer;
 import com.springmodulith.plugin.configuration.ModulithSettings;
@@ -630,7 +621,7 @@ public final class ModulithBoundaryAnnotator implements Annotator {
         if (namedInterface != null) {
 
             String dependency =
-                    target.getName()
+                    dependencyModuleId(source, target, targetClass.getProject())
                             + " :: "
                             + namedInterface.getName();
 
@@ -687,7 +678,7 @@ public final class ModulithBoundaryAnnotator implements Annotator {
         if (isRootApiType) {
 
             String dependency =
-                    target.getName();
+                    dependencyModuleId(source, target, targetClass.getProject());
 
             /*
              * Do not offer:
@@ -738,7 +729,7 @@ public final class ModulithBoundaryAnnotator implements Annotator {
          *     Add 'account' as an allowed dependency of the 'auth' module
          * ---------------------------------------------------------
          */
-        String dependency = target.getName();
+        String dependency = dependencyModuleId(source, target, targetClass.getProject());
 
         if (hasAllowedDependency(
                 source,
@@ -821,6 +812,119 @@ public final class ModulithBoundaryAnnotator implements Annotator {
                 @NotNull PsiFile file) {
             return delegate.generatePreview(project, editor, file);
         }
+    }
+
+    /**
+     * Returns the dependency module identifier used in allowedDependencies.
+     *
+     * Top-level modules keep their existing short module name. Nested module
+     * dependencies are represented by their logical module path, not by the
+     * Java package's fully qualified name.
+     */
+    @NotNull
+    private static String dependencyModuleId(
+            @NotNull ModulithModule source,
+            @NotNull ModulithModule target,
+            @NotNull Project project) {
+
+        String sourcePackage = source.getPackageName();
+        String targetPackage = target.getPackageName();
+
+        if (!targetPackage.startsWith(sourcePackage + ".")) {
+            return target.getName();
+        }
+
+        String nestedPath =
+                targetPackage.substring(sourcePackage.length() + 1);
+
+        /*
+         * Build the logical module path from recognized Modulith parent
+         * packages. This deliberately avoids using the Java application's
+         * fully qualified package prefix.
+         *
+         * Examples:
+         *   account -> account.nested
+         *   account.nested -> account.nested.deepNested1
+         *   account.nested.deepNested1 ->
+         *       account.nested.deepNested1.deepNested2
+         */
+        java.util.LinkedList<String> modulePath =
+                new java.util.LinkedList<>();
+        modulePath.addFirst(source.getName());
+
+        String parentPackage = sourcePackage;
+        String sourceSuffix = "." + source.getName();
+
+        if (parentPackage.endsWith(sourceSuffix)) {
+            parentPackage =
+                    parentPackage.substring(
+                            0,
+                            parentPackage.length() - sourceSuffix.length()
+                    );
+        }
+
+        while (isApplicationModulePackage(project, parentPackage)) {
+            int lastDot = parentPackage.lastIndexOf('.');
+            String parentModuleName =
+                    lastDot >= 0
+                            ? parentPackage.substring(lastDot + 1)
+                            : parentPackage;
+
+            modulePath.addFirst(parentModuleName);
+
+            int parentLastDot = parentPackage.lastIndexOf('.');
+            if (parentLastDot < 0) {
+                break;
+            }
+
+            String parentOfParent =
+                    parentPackage.substring(0, parentLastDot);
+
+            if (parentOfParent.equals(parentPackage)) {
+                break;
+            }
+
+            parentPackage = parentOfParent;
+        }
+
+        return String.join(".", modulePath)
+                + "."
+                + nestedPath;
+    }
+
+    private static boolean isApplicationModulePackage(
+            @NotNull Project project,
+            @NotNull String packageName) {
+
+        com.intellij.psi.PsiPackage psiPackage =
+                JavaPsiFacade.getInstance(project)
+                        .findPackage(packageName);
+
+        if (psiPackage == null) {
+            return false;
+        }
+
+        for (com.intellij.psi.PsiDirectory directory :
+                psiPackage.getDirectories()) {
+
+            PsiFile packageInfo =
+                    directory.findFile("package-info.java");
+
+            if (!(packageInfo instanceof PsiJavaFile javaFile)) {
+                continue;
+            }
+
+            for (PsiClass psiClass : javaFile.getClasses()) {
+                if (psiClass.getModifierList() != null
+                        && psiClass.getModifierList().findAnnotation(
+                        "org.springframework.modulith.ApplicationModule"
+                ) != null) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static boolean hasAllowedDependency(
